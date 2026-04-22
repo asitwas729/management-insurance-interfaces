@@ -1,0 +1,79 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      JWT_SECRET: ${JWT_SECRET:-interfacehub-docker-secret-key-change-me-in-prod}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/interfacehub
+      SPRING_DATASOURCE_USERNAME: interfacehub
+      SPRING_DATASOURCE_PASSWORD: interfacehub
+    depends_on:
+      - postgres
+      - kafka
+    networks:
+      - interfacehub-net
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: interfacehub
+      POSTGRES_USER: interfacehub
+      POSTGRES_PASSWORD: interfacehub
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - interfacehub-net
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    networks:
+      - interfacehub-net
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - interfacehub-net
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    networks:
+      - interfacehub-net
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - interfacehub-net
+
+volumes:
+  postgres-data:
+  grafana-data:
+
+networks:
+  interfacehub-net:
+    driver: bridge
