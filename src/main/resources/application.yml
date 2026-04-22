@@ -23,10 +23,12 @@ spring:
       enabled: true
       path: /h2-console
   flyway:
-    enabled: false
+    enabled: true
+    clean-disabled: false
+    clean-on-validation-error: true
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: none
     open-in-view: false
     properties:
       hibernate:
@@ -54,10 +56,21 @@ management:
   metrics:
     tags:
       application: interfacehub
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+
+logging:
+  pattern:
+    level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
 
 logging:
   level:
     org.hibernate.SQL: debug
+    io.opentelemetry: warn
 
 resilience4j:
   circuitbreaker:
@@ -95,3 +108,8 @@ interfacehub:
     replay:
       max-attempts: 3
       cooldown-seconds: 60
+  llm:
+    enabled: ${LLM_ENABLED:false}
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: claude-haiku-4-5-20251001
+    max-tokens: 1024
