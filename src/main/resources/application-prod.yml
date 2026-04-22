@@ -1,0 +1,68 @@
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/interfacehub}
+    username: ${DB_USERNAME:interfacehub}
+    password: ${DB_PASSWORD:}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    validate-on-migrate: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+  h2:
+    console:
+      enabled: false
+  batch:
+    job:
+      enabled: false
+    jdbc:
+      initialize-schema: always
+
+# Java 21 이상 환경에서 virtual threads 활성화 (JDK 21+ 필요)
+# spring.threads.virtual.enabled: true
+
+server:
+  port: ${SERVER_PORT:8080}
+
+logging:
+  level:
+    org.hibernate.SQL: warn
+    com.example.interfacehub: info
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus, metrics, info
+  endpoint:
+    health:
+      show-details: always
+
+interfacehub:
+  security:
+    jwt:
+      secret: ${JWT_SECRET}
+      expiration-seconds: ${JWT_EXPIRATION_SECONDS:3600}
+  mq:
+    mode: ${MQ_MODE:kafka}
+    kafka:
+      consumer-enabled: ${KAFKA_CONSUMER_ENABLED:true}
+      consumer-topic: ${KAFKA_CONSUMER_TOPIC:interfacehub.inbound}
+      dlq-topic: ${KAFKA_DLQ_TOPIC:interfacehub.dlq}
+  dlq:
+    replay:
+      max-attempts: ${DLQ_REPLAY_MAX_ATTEMPTS:3}
+      cooldown-seconds: ${DLQ_REPLAY_COOLDOWN_SECONDS:60}

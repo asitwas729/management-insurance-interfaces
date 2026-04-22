@@ -1,0 +1,97 @@
+spring:
+  application:
+    name: interfacehub
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      retries: 3
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+  datasource:
+    url: jdbc:h2:mem:interfacehub;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+  batch:
+    job:
+      enabled: false
+    jdbc:
+      initialize-schema: embedded
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, prometheus, metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    tags:
+      application: interfacehub
+
+logging:
+  level:
+    org.hibernate.SQL: debug
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+        register-health-indicator: true
+  ratelimiter:
+    configs:
+      default:
+        limit-for-period: 50
+        limit-refresh-period: 1s
+        timeout-duration: 0
+  bulkhead:
+    configs:
+      default:
+        max-concurrent-calls: 20
+
+interfacehub:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:interfacehub-development-secret-key-please-change-in-prod-123456789}
+      expiration-seconds: ${JWT_EXPIRATION_SECONDS:3600}
+  mq:
+    mode: in-memory
+    kafka:
+      consumer-enabled: false
+      consumer-topic: interfacehub.inbound
+      dlq-topic: interfacehub.dlq
+  dlq:
+    replay:
+      max-attempts: 3
+      cooldown-seconds: 60

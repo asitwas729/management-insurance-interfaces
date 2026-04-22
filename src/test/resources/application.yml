@@ -1,0 +1,8 @@
+spring:
+  batch:
+    job:
+      enabled: false
+
+interfacehub:
+  security:
+    open-endpoints-for-test: true
