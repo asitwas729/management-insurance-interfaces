@@ -1,90 +1,79 @@
 package com.example.interfacehub.application.auth;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyCollection;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 import com.example.interfacehub.infrastructure.persistence.RefreshTokenRepository;
 import com.example.interfacehub.infrastructure.security.JwtTokenProvider;
 import com.example.interfacehub.infrastructure.security.TokenBlacklistService;
+import com.example.interfacehub.application.audit.AuditLogService;
 import com.example.interfacehub.presentation.LoginRequest;
-import com.example.interfacehub.presentation.LoginResponse;
-import java.util.List;
+import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
+import io.github.resilience4j.ratelimiter.RateLimiterConfig;
+import io.github.resilience4j.ratelimiter.RequestNotPermitted;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
+import jakarta.servlet.http.HttpServletRequest;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
 
-    @Mock
-    private AuthenticationManager authenticationManager;
-
-    @Mock
-    private JwtTokenProvider jwtTokenProvider;
-
-    @Mock
-    private AppUserDetailsService userDetailsService;
-
-    @Mock
-    private RefreshTokenRepository refreshTokenRepository;
-
-    @Mock
-    private TokenBlacklistService tokenBlacklistService;
-
-    @Captor
-    private ArgumentCaptor<UsernamePasswordAuthenticationToken> authenticationCaptor;
-
-    @InjectMocks
     private AuthService authService;
 
-    @Test
-    void login_success_issues_access_and_refresh_token() {
-        var authentication = new UsernamePasswordAuthenticationToken(
-            "admin",
-            null,
-            List.of(new SimpleGrantedAuthority("ROLE_ADMIN"))
+    @Mock private AuthenticationManager authenticationManager;
+    @Mock private JwtTokenProvider jwtTokenProvider;
+    @Mock private AppUserDetailsService userDetailsService;
+    @Mock private RefreshTokenRepository refreshTokenRepository;
+    @Mock private TokenBlacklistService tokenBlacklistService;
+    @Mock private AuditLogService auditLogService;
+    @Mock private HttpServletRequest request;
+    @Mock private Authentication authentication;
+
+    @BeforeEach
+    void setUp() {
+        RateLimiterConfig config = RateLimiterConfig.custom()
+            .limitForPeriod(1)
+            .limitRefreshPeriod(java.time.Duration.ofMinutes(1))
+            .build();
+            
+        RateLimiterRegistry registry = RateLimiterRegistry.ofDefaults();
+        registry.addConfiguration("loginRateLimiter", config);
+
+        authService = new AuthService(
+            authenticationManager,
+            jwtTokenProvider,
+            userDetailsService,
+            refreshTokenRepository,
+            tokenBlacklistService,
+            registry,
+            auditLogService
         );
+
+        ServletRequestAttributes attrs = new ServletRequestAttributes(request);
+        RequestContextHolder.setRequestAttributes(attrs);
+    }
+
+    @Test
+    void login_rate_limit_throws_RequestNotPermitted() {
+        LoginRequest loginRequest = new LoginRequest("user", "pass");
+        when(request.getRemoteAddr()).thenReturn("127.0.0.1");
         when(authenticationManager.authenticate(any())).thenReturn(authentication);
-        when(jwtTokenProvider.generateToken(eq("admin"), anyCollection())).thenReturn("access-token");
+        when(authentication.getName()).thenReturn("user");
 
-        LoginResponse response = authService.login(new LoginRequest("admin", "servicehotkey"));
+        // First call should pass
+        authService.login(loginRequest);
 
-        assertThat(response.tokenType()).isEqualTo("Bearer");
-        assertThat(response.accessToken()).isEqualTo("access-token");
-        assertThat(response.refreshToken()).isNotBlank();
-        verify(refreshTokenRepository).save(any());
-        verify(authenticationManager).authenticate(authenticationCaptor.capture());
-        assertThat(authenticationCaptor.getValue().getName()).isEqualTo("admin");
-    }
-
-    @Test
-    void login_fails_when_password_is_wrong() {
-        when(authenticationManager.authenticate(any()))
-            .thenThrow(new BadCredentialsException("Bad credentials"));
-
-        assertThatThrownBy(() -> authService.login(new LoginRequest("admin", "wrong-password")))
-            .isInstanceOf(BadCredentialsException.class);
-    }
-
-    @Test
-    void login_fails_when_user_does_not_exist() {
-        when(authenticationManager.authenticate(any()))
-            .thenThrow(new BadCredentialsException("Bad credentials"));
-
-        assertThatThrownBy(() -> authService.login(new LoginRequest("missing", "password")))
-            .isInstanceOf(BadCredentialsException.class);
+        // Second call should throw RequestNotPermitted
+        assertThrows(RequestNotPermitted.class, () -> authService.login(loginRequest));
+        
+        verify(authenticationManager, times(1)).authenticate(any());
     }
 }

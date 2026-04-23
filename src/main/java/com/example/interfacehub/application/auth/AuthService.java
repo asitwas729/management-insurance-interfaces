@@ -2,18 +2,28 @@ package com.example.interfacehub.application.auth;
 
 import com.example.interfacehub.common.error.BusinessException;
 import com.example.interfacehub.common.error.ErrorCode;
+import com.example.interfacehub.domain.audit.AuditAction;
+import com.example.interfacehub.application.audit.AuditLogService;
 import com.example.interfacehub.domain.auth.RefreshToken;
 import com.example.interfacehub.infrastructure.persistence.RefreshTokenRepository;
 import com.example.interfacehub.infrastructure.security.JwtTokenProvider;
 import com.example.interfacehub.infrastructure.security.TokenBlacklistService;
 import com.example.interfacehub.presentation.LoginRequest;
 import com.example.interfacehub.presentation.LoginResponse;
+import io.github.resilience4j.ratelimiter.RateLimiter;
+import io.github.resilience4j.ratelimiter.RateLimiterConfig;
+import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
+import java.time.Duration;
 
 @Service
 public class AuthService {
@@ -25,32 +35,60 @@ public class AuthService {
     private final AppUserDetailsService userDetailsService;
     private final RefreshTokenRepository refreshTokenRepository;
     private final TokenBlacklistService tokenBlacklistService;
+    private final RateLimiterRegistry rateLimiterRegistry;
+    private final AuditLogService auditLogService;
 
     public AuthService(
         AuthenticationManager authenticationManager,
         JwtTokenProvider jwtTokenProvider,
         AppUserDetailsService userDetailsService,
         RefreshTokenRepository refreshTokenRepository,
-        TokenBlacklistService tokenBlacklistService
+        TokenBlacklistService tokenBlacklistService,
+        RateLimiterRegistry rateLimiterRegistry,
+        AuditLogService auditLogService
     ) {
         this.authenticationManager = authenticationManager;
         this.jwtTokenProvider = jwtTokenProvider;
         this.userDetailsService = userDetailsService;
         this.refreshTokenRepository = refreshTokenRepository;
         this.tokenBlacklistService = tokenBlacklistService;
+        this.rateLimiterRegistry = rateLimiterRegistry;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
     public LoginResponse login(LoginRequest request) {
-        Authentication authentication = authenticationManager.authenticate(
-            new UsernamePasswordAuthenticationToken(request.username(), request.password())
-        );
-        String accessToken = jwtTokenProvider.generateToken(authentication.getName(), authentication.getAuthorities());
+        String clientIp = getClientIp();
+        String limitKey = "login:" + request.username() + ":" + clientIp;
+        
+        // "loginRateLimiter" 설정을 기반으로 유저+IP별 개별 림리터 생성
+        RateLimiter limiter = rateLimiterRegistry.rateLimiter(limitKey, "loginRateLimiter");
 
-        RefreshToken refreshToken = RefreshToken.issue(authentication.getName(), REFRESH_TOKEN_VALID_DAYS);
-        refreshTokenRepository.save(refreshToken);
+        return RateLimiter.decorateSupplier(limiter, () -> {
+            try {
+                Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(request.username(), request.password())
+                );
+                
+                refreshTokenRepository.revokeByUsername(authentication.getName());
+                String accessToken = jwtTokenProvider.generateToken(authentication.getName(), authentication.getAuthorities());
+                RefreshToken refreshToken = RefreshToken.issue(authentication.getName(), REFRESH_TOKEN_VALID_DAYS);
+                refreshTokenRepository.save(refreshToken);
 
-        return LoginResponse.bearer(accessToken, refreshToken.getToken());
+                return LoginResponse.bearer(accessToken, refreshToken.getToken());
+            } catch (Exception e) {
+                // 인증 실패 감사 로그 기록 (인증 과정에서의 예외 처리)
+                auditLogService.record(
+                    request.username(),
+                    AuditAction.AUTHENTICATION_FAILED,
+                    "LOGIN",
+                    "WEB",
+                    e.getMessage(),
+                    clientIp
+                );
+                throw e;
+            }
+        }).get();
     }
 
     @Transactional
@@ -78,7 +116,17 @@ public class AuthService {
         try {
             tokenBlacklistService.blacklist(accessToken, jwtTokenProvider.extractExpiry(accessToken));
         } catch (Exception ignored) {
-            // token already invalid — blacklisting is best-effort
         }
+    }
+
+    private String getClientIp() {
+        ServletRequestAttributes attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+        if (attrs == null) return "UNKNOWN";
+        HttpServletRequest request = attrs.getRequest();
+        String xForwardedFor = request.getHeader("X-Forwarded-For");
+        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
+            return xForwardedFor.split(",")[0];
+        }
+        return request.getRemoteAddr();
     }
 }

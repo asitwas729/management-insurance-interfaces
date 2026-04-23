@@ -21,7 +21,8 @@ public class CacheConfig {
             caffeineCache("interface", Duration.ofMinutes(5)),
             caffeineCache("published-config", Duration.ofMinutes(1)),
             caffeineCache("error-catalog", Duration.ofMinutes(10)),
-            caffeineCache("maintenance", Duration.ofMinutes(1))
+            caffeineCache("maintenance", Duration.ofMinutes(1)),
+            caffeineCache("incident-summary", Duration.ofMinutes(30))
         ));
         return manager;
     }

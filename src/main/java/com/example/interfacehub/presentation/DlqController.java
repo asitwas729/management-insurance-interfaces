@@ -3,6 +3,10 @@ package com.example.interfacehub.presentation;
 import com.example.interfacehub.application.mq.DlqMessageService;
 import com.example.interfacehub.application.mq.DlqReplayService;
 import com.example.interfacehub.domain.mq.DlqReplayStatus;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
 import org.springframework.data.domain.Sort;
@@ -19,6 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/dlq")
+@Tag(name = "DLQ", description = "Dead-letter queue and replay workflow APIs")
 public class DlqController {
 
     private final DlqMessageService dlqMessageService;
@@ -30,6 +35,11 @@ public class DlqController {
     }
 
     @GetMapping
+    @Operation(summary = "List DLQ messages", description = "Returns DLQ messages filtered by interface code")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "DLQ messages returned"),
+        @ApiResponse(responseCode = "401", description = "Unauthorized")
+    })
     public PagedResponse<DlqMessageResponse> findDlqMessages(
         @RequestParam(name = "interfaceCode", required = false) String interfaceCode,
         @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
@@ -38,11 +48,22 @@ public class DlqController {
     }
 
     @GetMapping("/{dlqId}")
+    @Operation(summary = "Get DLQ message", description = "Returns a DLQ message by id")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "DLQ message returned"),
+        @ApiResponse(responseCode = "404", description = "DLQ message not found")
+    })
     public DlqMessageResponse findDlqMessage(@PathVariable Long dlqId) {
         return DlqMessageResponse.from(dlqMessageService.findById(dlqId));
     }
 
     @PostMapping("/{dlqId}/replay-requests")
+    @Operation(summary = "Create replay request", description = "Creates a replay request for a DLQ message")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Replay request created"),
+        @ApiResponse(responseCode = "400", description = "Invalid request"),
+        @ApiResponse(responseCode = "404", description = "DLQ message not found")
+    })
     public DlqReplayRequestResponse requestReplay(
         @PathVariable Long dlqId,
         @Valid @RequestBody CreateDlqReplayRequest request
@@ -51,6 +72,12 @@ public class DlqController {
     }
 
     @PostMapping("/replay-requests/{replayRequestId}/approve")
+    @Operation(summary = "Approve replay request", description = "Approves a pending DLQ replay request")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Replay request approved"),
+        @ApiResponse(responseCode = "403", description = "Forbidden"),
+        @ApiResponse(responseCode = "404", description = "Replay request not found")
+    })
     public DlqReplayRequestResponse approveReplayRequest(
         @PathVariable Long replayRequestId,
         @Valid @RequestBody ApproveDlqReplayRequest request
@@ -59,6 +86,12 @@ public class DlqController {
     }
 
     @PostMapping("/replay-requests/{replayRequestId}/reject")
+    @Operation(summary = "Reject replay request", description = "Rejects a pending DLQ replay request")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Replay request rejected"),
+        @ApiResponse(responseCode = "403", description = "Forbidden"),
+        @ApiResponse(responseCode = "404", description = "Replay request not found")
+    })
     public DlqReplayRequestResponse rejectReplayRequest(
         @PathVariable Long replayRequestId,
         @Valid @RequestBody RejectDlqReplayRequest request
@@ -67,6 +100,12 @@ public class DlqController {
     }
 
     @PostMapping("/replay-requests/{replayRequestId}/execute")
+    @Operation(summary = "Execute replay request", description = "Executes an approved replay request")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Replay executed"),
+        @ApiResponse(responseCode = "403", description = "Forbidden"),
+        @ApiResponse(responseCode = "404", description = "Replay request not found")
+    })
     public DlqReplayResponse executeReplayRequest(
         @PathVariable Long replayRequestId,
         @Valid @RequestBody ExecuteDlqReplayRequest request
@@ -78,11 +117,21 @@ public class DlqController {
     }
 
     @GetMapping("/replay-requests/{replayRequestId}")
+    @Operation(summary = "Get replay request", description = "Returns DLQ replay request detail")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Replay request returned"),
+        @ApiResponse(responseCode = "404", description = "Replay request not found")
+    })
     public DlqReplayRequestResponse findReplayRequest(@PathVariable Long replayRequestId) {
         return DlqReplayRequestResponse.from(dlqReplayService.findById(replayRequestId));
     }
 
     @GetMapping("/replay-requests")
+    @Operation(summary = "List replay requests", description = "Returns DLQ replay requests filtered by status/date")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Replay requests returned"),
+        @ApiResponse(responseCode = "401", description = "Unauthorized")
+    })
     public PagedResponse<DlqReplayRequestResponse> findReplayRequests(
         @RequestParam(required = false) DlqReplayStatus status,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,

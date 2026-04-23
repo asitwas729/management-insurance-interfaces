@@ -2,6 +2,10 @@ package com.example.interfacehub.presentation;
 
 import com.example.interfacehub.application.registry.InterfaceRegistryService;
 import com.example.interfacehub.infrastructure.persistence.ExecutionHistoryRepository;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.data.domain.Pageable;
@@ -20,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1/interfaces")
+@Tag(name = "Interface Registry", description = "Interface registry and config management APIs")
 public class InterfaceRegistryController {
 
     private final InterfaceRegistryService interfaceRegistryService;
@@ -35,11 +40,22 @@ public class InterfaceRegistryController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Create interface", description = "Registers a new interface definition")
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "Interface created"),
+        @ApiResponse(responseCode = "400", description = "Invalid request"),
+        @ApiResponse(responseCode = "409", description = "Interface code already exists")
+    })
     public InterfaceResponse createInterface(@Valid @RequestBody CreateInterfaceRequest request) {
         return InterfaceResponse.from(interfaceRegistryService.createInterface(request));
     }
 
     @GetMapping
+    @Operation(summary = "List interfaces", description = "Returns all interfaces with configuration and execution summary")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Interfaces returned"),
+        @ApiResponse(responseCode = "401", description = "Unauthorized")
+    })
     public List<InterfaceResponse> findAllInterfaces() {
         return interfaceRegistryService.findAllInterfacesWithStats().stream()
             .map(stats -> InterfaceResponse.fromDetail(stats.definition(), stats.configCount(), stats.lastExecutedAt()))
@@ -47,6 +63,11 @@ public class InterfaceRegistryController {
     }
 
     @GetMapping("/{interfaceCode}")
+    @Operation(summary = "Get interface detail", description = "Returns a single interface with config count and last execution")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Interface returned"),
+        @ApiResponse(responseCode = "404", description = "Interface not found")
+    })
     public InterfaceResponse findInterface(@PathVariable String interfaceCode) {
         var definition = interfaceRegistryService.findByCode(interfaceCode);
         int configCount = interfaceRegistryService.countConfigs(definition);
@@ -58,6 +79,12 @@ public class InterfaceRegistryController {
     }
 
     @PatchMapping("/{interfaceCode}/status")
+    @Operation(summary = "Change interface status", description = "Updates interface lifecycle status")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Status changed"),
+        @ApiResponse(responseCode = "400", description = "Invalid status change"),
+        @ApiResponse(responseCode = "404", description = "Interface not found")
+    })
     public InterfaceResponse changeStatus(
         @PathVariable String interfaceCode,
         @Valid @RequestBody ChangeInterfaceStatusRequest request
@@ -67,6 +94,12 @@ public class InterfaceRegistryController {
 
     @PostMapping("/{interfaceCode}/configs")
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Create interface config", description = "Creates a new interface configuration version")
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "Config created"),
+        @ApiResponse(responseCode = "400", description = "Invalid request"),
+        @ApiResponse(responseCode = "404", description = "Interface not found")
+    })
     public ConfigResponse createConfig(
         @PathVariable String interfaceCode,
         @Valid @RequestBody CreateConfigRequest request
@@ -75,6 +108,11 @@ public class InterfaceRegistryController {
     }
 
     @GetMapping("/{interfaceCode}/configs")
+    @Operation(summary = "List interface configs", description = "Returns paginated configuration versions for an interface")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Configs returned"),
+        @ApiResponse(responseCode = "404", description = "Interface not found")
+    })
     public PagedResponse<ConfigResponse> findConfigs(
         @PathVariable String interfaceCode,
         @PageableDefault(size = 20, sort = "version", direction = Sort.Direction.DESC) Pageable pageable
@@ -85,6 +123,11 @@ public class InterfaceRegistryController {
     }
 
     @GetMapping("/{interfaceCode}/configs/{configId}")
+    @Operation(summary = "Get config detail", description = "Returns one configuration version by id")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Config returned"),
+        @ApiResponse(responseCode = "404", description = "Config not found")
+    })
     public ConfigResponse findConfig(
         @PathVariable String interfaceCode,
         @PathVariable Long configId
@@ -93,6 +136,12 @@ public class InterfaceRegistryController {
     }
 
     @PostMapping("/{interfaceCode}/configs/{configId}/publish")
+    @Operation(summary = "Publish config", description = "Publishes one configuration version as active")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Config published"),
+        @ApiResponse(responseCode = "403", description = "Forbidden"),
+        @ApiResponse(responseCode = "404", description = "Config not found")
+    })
     public ConfigResponse publishConfig(
         @PathVariable String interfaceCode,
         @PathVariable Long configId,

@@ -2,7 +2,9 @@ package com.example.interfacehub.application.incident;
 
 import com.example.interfacehub.domain.execution.ExecutionHistory;
 import com.example.interfacehub.domain.execution.ExecutionStatus;
+import com.example.interfacehub.domain.incident.IncidentSummary;
 import com.example.interfacehub.infrastructure.persistence.ExecutionHistoryRepository;
+import com.example.interfacehub.infrastructure.persistence.IncidentSummaryRepository;
 import com.example.interfacehub.presentation.IncidentSummaryResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -19,6 +21,7 @@ import okhttp3.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.context.ApplicationContext;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.scheduling.annotation.Async;
@@ -33,6 +36,7 @@ public class IncidentSummaryService {
     private static final MediaType JSON = MediaType.get("application/json");
 
     private final ExecutionHistoryRepository repository;
+    private final IncidentSummaryRepository summaryRepository;
     private final LlmProperties llmProperties;
     private final ObjectMapper objectMapper;
     private final OkHttpClient httpClient;
@@ -42,15 +46,17 @@ public class IncidentSummaryService {
     @Autowired
     public IncidentSummaryService(
         ExecutionHistoryRepository repository,
+        IncidentSummaryRepository summaryRepository,
         LlmProperties llmProperties,
         ObjectMapper objectMapper,
         ApplicationContext applicationContext
     ) {
-        this(repository, llmProperties, objectMapper, applicationContext, new OkHttpClient(), ANTHROPIC_API_URL);
+        this(repository, summaryRepository, llmProperties, objectMapper, applicationContext, new OkHttpClient(), ANTHROPIC_API_URL);
     }
 
     IncidentSummaryService(
         ExecutionHistoryRepository repository,
+        IncidentSummaryRepository summaryRepository,
         LlmProperties llmProperties,
         ObjectMapper objectMapper,
         ApplicationContext applicationContext,
@@ -58,6 +64,7 @@ public class IncidentSummaryService {
         String anthropicApiUrl
     ) {
         this.repository = repository;
+        this.summaryRepository = summaryRepository;
         this.llmProperties = llmProperties;
         this.objectMapper = objectMapper;
         this.applicationContext = applicationContext;
@@ -65,7 +72,8 @@ public class IncidentSummaryService {
         this.anthropicApiUrl = anthropicApiUrl;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
+    @Cacheable(value = "incident-summary", key = "#hoursBack + '-' + #limit")
     public CompletableFuture<IncidentSummaryResponse> summarize(int hoursBack, int limit) {
         LocalDateTime since = LocalDateTime.now().minusHours(hoursBack);
         List<ExecutionHistory> failures = repository.findRecentByStatus(
@@ -80,7 +88,13 @@ public class IncidentSummaryService {
 
         return applicationContext.getBean(IncidentSummaryService.class)
             .callClaude(failures, hoursBack)
-            .thenApply(summary -> new IncidentSummaryResponse(summary, failures.size(), hoursBack, LocalDateTime.now()));
+            .thenApply(summary -> {
+                // Save to history
+                IncidentSummary history = new IncidentSummary(summary, failures.size(), hoursBack);
+                summaryRepository.save(history);
+                
+                return new IncidentSummaryResponse(summary, failures.size(), hoursBack, history.getGeneratedAt());
+            });
     }
 
     @Async("applicationTaskExecutor")

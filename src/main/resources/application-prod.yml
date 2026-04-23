@@ -75,3 +75,9 @@ interfacehub:
     replay:
       max-attempts: ${DLQ_REPLAY_MAX_ATTEMPTS:3}
       cooldown-seconds: ${DLQ_REPLAY_COOLDOWN_SECONDS:60}
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

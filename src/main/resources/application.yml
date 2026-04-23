@@ -1,3 +1,30 @@
+resilience4j:
+  ratelimiter:
+    instances:
+      loginRateLimiter:
+        limit-for-period: 1
+        limit-refresh-period: 10s
+        timeout-duration: 0
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 15s
+        register-health-indicator: true
+  bulkhead:
+    configs:
+      default:
+        max-concurrent-calls: 20
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
 spring:
   application:
     name: interfacehub
@@ -72,32 +99,9 @@ management:
 logging:
   pattern:
     level: "%5p [${spring.application.name:},%X{traceId:-},%X{spanId:-}]"
-
-logging:
   level:
     org.hibernate.SQL: debug
     io.opentelemetry: warn
-
-resilience4j:
-  circuitbreaker:
-    configs:
-      default:
-        sliding-window-type: COUNT_BASED
-        sliding-window-size: 20
-        minimum-number-of-calls: 10
-        failure-rate-threshold: 50
-        wait-duration-in-open-state: 15s
-        register-health-indicator: true
-  ratelimiter:
-    configs:
-      default:
-        limit-for-period: 50
-        limit-refresh-period: 1s
-        timeout-duration: 0
-  bulkhead:
-    configs:
-      default:
-        max-concurrent-calls: 20
 
 interfacehub:
   security:
