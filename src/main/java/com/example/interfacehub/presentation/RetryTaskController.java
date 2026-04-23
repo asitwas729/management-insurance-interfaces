@@ -3,7 +3,9 @@ package com.example.interfacehub.presentation;
 import com.example.interfacehub.application.retry.RetryTaskService;
 import com.example.interfacehub.domain.retry.RetryStatus;
 import jakarta.validation.Valid;
-import java.util.List;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -57,9 +59,12 @@ public class RetryTaskController {
     }
 
     @GetMapping("/retries")
-    public List<RetryTaskResponse> findRetryTasks(@RequestParam(required = false) RetryStatus status) {
-        return retryTaskService.findByStatus(status).stream()
-            .map(RetryTaskResponse::from)
-            .toList();
+    public PagedResponse<RetryTaskResponse> findRetryTasks(
+        @RequestParam(required = false) RetryStatus status,
+        @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        return PagedResponse.from(
+            retryTaskService.findByStatusPaged(status, pageable).map(RetryTaskResponse::from)
+        );
     }
 }

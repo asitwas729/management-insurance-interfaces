@@ -29,4 +29,14 @@ public class ExecutionHistoryController {
                 .map(ExecutionHistoryResponse::from)
         );
     }
+
+    @GetMapping("/{executionId}")
+    public ExecutionHistoryResponse findHistory(
+        @PathVariable String interfaceCode,
+        @PathVariable String executionId
+    ) {
+        return ExecutionHistoryResponse.from(
+            executionHistoryService.findByExecutionId(interfaceCode, executionId)
+        );
+    }
 }

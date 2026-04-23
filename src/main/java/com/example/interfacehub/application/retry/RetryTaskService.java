@@ -20,6 +20,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -158,6 +160,14 @@ public class RetryTaskService {
             return retryTaskRepository.findAll();
         }
         return retryTaskRepository.findByStatus(status);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<RetryTask> findByStatusPaged(RetryStatus status, Pageable pageable) {
+        if (status == null) {
+            return retryTaskRepository.findAllByOrderByCreatedAtDesc(pageable);
+        }
+        return retryTaskRepository.findByStatusOrderByCreatedAtDesc(status, pageable);
     }
 
     private Map<String, Object> toPayloadMap(String requestPayload) {

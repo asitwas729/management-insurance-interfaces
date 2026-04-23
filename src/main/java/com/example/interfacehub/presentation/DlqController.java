@@ -30,8 +30,16 @@ public class DlqController {
     }
 
     @GetMapping
-    public PagedResponse<DlqMessageResponse> findDlqMessages(String interfaceCode, Pageable pageable) {
+    public PagedResponse<DlqMessageResponse> findDlqMessages(
+        @RequestParam(name = "interfaceCode", required = false) String interfaceCode,
+        @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
         return PagedResponse.from(dlqMessageService.findAll(interfaceCode, pageable).map(DlqMessageResponse::from));
+    }
+
+    @GetMapping("/{dlqId}")
+    public DlqMessageResponse findDlqMessage(@PathVariable Long dlqId) {
+        return DlqMessageResponse.from(dlqMessageService.findById(dlqId));
     }
 
     @PostMapping("/{dlqId}/replay-requests")
