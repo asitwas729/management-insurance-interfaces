@@ -1,5 +1,7 @@
 package com.example.interfacehub.application.scheduler;
 
+import com.example.interfacehub.application.audit.AuditLogService;
+import com.example.interfacehub.domain.audit.AuditAction;
 import java.time.LocalDateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,10 +16,16 @@ public class RetentionService {
 
     private final JdbcTemplate jdbcTemplate;
     private final RetentionProperties retentionProperties;
+    private final AuditLogService auditLogService;
 
-    public RetentionService(JdbcTemplate jdbcTemplate, RetentionProperties retentionProperties) {
+    public RetentionService(
+        JdbcTemplate jdbcTemplate,
+        RetentionProperties retentionProperties,
+        AuditLogService auditLogService
+    ) {
         this.jdbcTemplate = jdbcTemplate;
         this.retentionProperties = retentionProperties;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional
@@ -62,6 +70,20 @@ public class RetentionService {
 
         log.info("[Retention] execution_history: archived={}, deleted={}; audit_log: archived={}, deleted={}",
             execArchived, execDeleted, auditArchived, auditDeleted);
+
+        String summary = String.format(
+            "ExecArchived: %d, ExecDeleted: %d, AuditArchived: %d, AuditDeleted: %d",
+            execArchived, execDeleted, auditArchived, auditDeleted
+        );
+
+        auditLogService.record(
+            "SYSTEM",
+            AuditAction.DATA_RETENTION_EXECUTED,
+            "SYSTEM_MAINTENANCE",
+            "RETENTION",
+            null,
+            summary
+        );
 
         return new RetentionResult(execArchived, execDeleted, auditArchived, auditDeleted, LocalDateTime.now());
     }

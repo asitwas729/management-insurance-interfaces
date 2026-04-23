@@ -20,4 +20,7 @@ public final class AuditAction {
     public static final String REPLAY_DLQ = "REPLAY_DLQ";
     public static final String APPROVE = "APPROVE";
     public static final String REJECT = "REJECT";
+
+    // System Actions
+    public static final String DATA_RETENTION_EXECUTED = "DATA_RETENTION_EXECUTED";
 }
