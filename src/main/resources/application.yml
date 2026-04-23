@@ -1,6 +1,12 @@
 spring:
   application:
     name: interfacehub
+  cache:
+    type: caffeine
+  data:
+    redis:
+      repositories:
+        enabled: false
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
@@ -113,3 +119,15 @@ interfacehub:
     api-key: ${ANTHROPIC_API_KEY:}
     model: claude-haiku-4-5-20251001
     max-tokens: 1024
+  scheduler:
+    enabled: ${SCHEDULER_ENABLED:true}
+    retry-fixed-delay-seconds: 60
+    dlq-fixed-delay-seconds: 60
+    interface-job-fixed-delay-seconds: 60
+  notification:
+    enabled: ${NOTIFICATION_ENABLED:false}
+    webhook-url: ${NOTIFICATION_WEBHOOK_URL:}
+  retention:
+    execution-history-days: ${RETENTION_EXECUTION_DAYS:90}
+    audit-log-days: ${RETENTION_AUDIT_DAYS:365}
+    archive-enabled: ${RETENTION_ARCHIVE_ENABLED:true}

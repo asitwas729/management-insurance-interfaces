@@ -1,4 +1,12 @@
 spring:
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000
+  data:
+    redis:
+      repositories:
+        enabled: false
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/interfacehub}
     username: ${DB_USERNAME:interfacehub}
