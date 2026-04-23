@@ -30,8 +30,9 @@ public class RetentionService {
 
     @Transactional
     public RetentionResult archiveAndPurge() {
-        LocalDateTime execCutoff = LocalDateTime.now().minusDays(retentionProperties.getExecutionHistoryDays());
-        LocalDateTime auditCutoff = LocalDateTime.now().minusDays(retentionProperties.getAuditLogDays());
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime execCutoff = now.minusDays(retentionProperties.getExecutionHistoryDays());
+        LocalDateTime auditCutoff = now.minusDays(retentionProperties.getAuditLogDays());
 
         int execArchived = 0;
         int execDeleted = 0;
@@ -68,12 +69,19 @@ public class RetentionService {
         auditDeleted = jdbcTemplate.update(
             "DELETE FROM audit_log WHERE created_at < ?", auditCutoff);
 
-        log.info("[Retention] execution_history: archived={}, deleted={}; audit_log: archived={}, deleted={}",
-            execArchived, execDeleted, auditArchived, auditDeleted);
+        // Security token cleanup: delete expired blacklist tokens and expired/revoked refresh tokens
+        int expiredBlacklistDeleted = jdbcTemplate.update(
+            "DELETE FROM token_blacklist WHERE expires_at < ?", now);
+        
+        int expiredRefreshTokenDeleted = jdbcTemplate.update(
+            "DELETE FROM refresh_token WHERE expires_at < ? OR revoked = true", now);
+
+        log.info("[Retention] execution_history: archived={}, deleted={}; audit_log: archived={}, deleted={}; tokens: blacklist_deleted={}, refresh_deleted={}",
+            execArchived, execDeleted, auditArchived, auditDeleted, expiredBlacklistDeleted, expiredRefreshTokenDeleted);
 
         String summary = String.format(
-            "ExecArchived: %d, ExecDeleted: %d, AuditArchived: %d, AuditDeleted: %d",
-            execArchived, execDeleted, auditArchived, auditDeleted
+            "ExecArchived: %d, ExecDeleted: %d, AuditArchived: %d, AuditDeleted: %d, BlacklistDeleted: %d, RefreshDeleted: %d",
+            execArchived, execDeleted, auditArchived, auditDeleted, expiredBlacklistDeleted, expiredRefreshTokenDeleted
         );
 
         auditLogService.record(
@@ -85,7 +93,7 @@ public class RetentionService {
             summary
         );
 
-        return new RetentionResult(execArchived, execDeleted, auditArchived, auditDeleted, LocalDateTime.now());
+        return new RetentionResult(execArchived, execDeleted, auditArchived, auditDeleted, now);
     }
 
     public record RetentionResult(
