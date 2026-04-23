@@ -33,11 +33,14 @@ public class RetentionService {
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime execCutoff = now.minusDays(retentionProperties.getExecutionHistoryDays());
         LocalDateTime auditCutoff = now.minusDays(retentionProperties.getAuditLogDays());
+        LocalDateTime archiveCutoff = now.minusDays(retentionProperties.getArchiveRetentionDays());
 
         int execArchived = 0;
         int execDeleted = 0;
         int auditArchived = 0;
         int auditDeleted = 0;
+        int archiveExecDeleted = 0;
+        int archiveAuditDeleted = 0;
 
         if (retentionProperties.isArchiveEnabled()) {
             execArchived = jdbcTemplate.update("""
@@ -69,6 +72,13 @@ public class RetentionService {
         auditDeleted = jdbcTemplate.update(
             "DELETE FROM audit_log WHERE created_at < ?", auditCutoff);
 
+        // Purge archive tables
+        archiveExecDeleted = jdbcTemplate.update(
+            "DELETE FROM archive_execution_history WHERE started_at < ?", archiveCutoff);
+
+        archiveAuditDeleted = jdbcTemplate.update(
+            "DELETE FROM archive_audit_log WHERE created_at < ?", archiveCutoff);
+
         // Security token cleanup: delete expired blacklist tokens and expired/revoked refresh tokens
         int expiredBlacklistDeleted = jdbcTemplate.update(
             "DELETE FROM token_blacklist WHERE expires_at < ?", now);
@@ -76,12 +86,12 @@ public class RetentionService {
         int expiredRefreshTokenDeleted = jdbcTemplate.update(
             "DELETE FROM refresh_token WHERE expires_at < ? OR revoked = true", now);
 
-        log.info("[Retention] execution_history: archived={}, deleted={}; audit_log: archived={}, deleted={}; tokens: blacklist_deleted={}, refresh_deleted={}",
-            execArchived, execDeleted, auditArchived, auditDeleted, expiredBlacklistDeleted, expiredRefreshTokenDeleted);
+        log.info("[Retention] execution_history: archived={}, deleted={}; audit_log: archived={}, deleted={}; archive_purge: exec={}, audit={}; tokens: blacklist_deleted={}, refresh_deleted={}",
+            execArchived, execDeleted, auditArchived, auditDeleted, archiveExecDeleted, archiveAuditDeleted, expiredBlacklistDeleted, expiredRefreshTokenDeleted);
 
         String summary = String.format(
-            "ExecArchived: %d, ExecDeleted: %d, AuditArchived: %d, AuditDeleted: %d, BlacklistDeleted: %d, RefreshDeleted: %d",
-            execArchived, execDeleted, auditArchived, auditDeleted, expiredBlacklistDeleted, expiredRefreshTokenDeleted
+            "ExecArchived: %d, ExecDeleted: %d, AuditArchived: %d, AuditDeleted: %d, ArchiveExecDeleted: %d, ArchiveAuditDeleted: %d, BlacklistDeleted: %d, RefreshDeleted: %d",
+            execArchived, execDeleted, auditArchived, auditDeleted, archiveExecDeleted, archiveAuditDeleted, expiredBlacklistDeleted, expiredRefreshTokenDeleted
         );
 
         auditLogService.record(
