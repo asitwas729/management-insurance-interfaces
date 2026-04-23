@@ -14,6 +14,8 @@ import java.time.DayOfWeek;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +37,7 @@ public class StandardContractService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "error-catalog", key = "'all'")
     public List<ErrorCatalog> findErrorCatalogs() {
         return errorCatalogRepository.findAll();
     }
@@ -45,6 +48,7 @@ public class StandardContractService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "error-catalog", allEntries = true)
     public ReprocessPolicy upsertReprocessPolicy(String errorCode, UpsertReprocessPolicyRequest request) {
         if (!errorCatalogRepository.existsById(errorCode)) {
             throw new BusinessException(ErrorCode.INVALID_REQUEST, "Unknown error code: " + errorCode);
@@ -62,6 +66,7 @@ public class StandardContractService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "maintenance", key = "#externalOrg == null || #externalOrg.isBlank() ? 'all' : #externalOrg.trim().toUpperCase()")
     public List<MaintenanceWindow> findMaintenanceWindows(String externalOrg) {
         if (externalOrg == null || externalOrg.isBlank()) {
             return maintenanceWindowRepository.findAll();
@@ -70,6 +75,7 @@ public class StandardContractService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "maintenance", allEntries = true)
     public MaintenanceWindow createMaintenanceWindow(CreateMaintenanceWindowRequest request) {
         MaintenanceWindow window = MaintenanceWindow.create(
             request.externalOrg().trim().toUpperCase(),
@@ -82,7 +88,17 @@ public class StandardContractService {
         return maintenanceWindowRepository.save(window);
     }
 
+    @Transactional
+    @CacheEvict(cacheNames = "maintenance", allEntries = true)
+    public void deleteMaintenanceWindow(Long id) {
+        if (!maintenanceWindowRepository.existsById(id)) {
+            throw new BusinessException(ErrorCode.INVALID_REQUEST, "Maintenance window not found: " + id);
+        }
+        maintenanceWindowRepository.deleteById(id);
+    }
+
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "maintenance", key = "'active:' + (#externalOrg == null || #externalOrg.isBlank() ? 'blank' : #externalOrg.trim().toUpperCase()) + ':' + #at.getDayOfWeek().name() + ':' + #at.toLocalTime().getHour() + ':' + #at.toLocalTime().getMinute()")
     public boolean isMaintenanceWindowActive(String externalOrg, LocalDateTime at) {
         if (externalOrg == null || externalOrg.isBlank()) {
             return false;

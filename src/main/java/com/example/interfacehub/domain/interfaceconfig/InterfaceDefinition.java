@@ -110,4 +110,16 @@ public class InterfaceDefinition {
     public InterfaceStatus getStatus() {
         return status;
     }
+
+    public void changeStatus(InterfaceStatus newStatus) {
+        this.status = newStatus;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
 }

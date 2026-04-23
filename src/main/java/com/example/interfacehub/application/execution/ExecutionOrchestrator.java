@@ -1,5 +1,6 @@
 package com.example.interfacehub.application.execution;
 
+import com.example.interfacehub.application.notification.NotificationService;
 import com.example.interfacehub.application.registry.InterfaceRegistryService;
 import com.example.interfacehub.application.standard.StandardContractService;
 import com.example.interfacehub.common.error.BusinessException;
@@ -41,6 +42,7 @@ public class ExecutionOrchestrator {
     private final SensitiveDataMasker sensitiveDataMasker;
     private final MeterRegistry meterRegistry;
     private final StandardContractService standardContractService;
+    private final NotificationService notificationService;
 
     public ExecutionOrchestrator(
         InterfaceRegistryService interfaceRegistryService,
@@ -49,7 +51,8 @@ public class ExecutionOrchestrator {
         ObjectMapper objectMapper,
         SensitiveDataMasker sensitiveDataMasker,
         MeterRegistry meterRegistry,
-        StandardContractService standardContractService
+        StandardContractService standardContractService,
+        NotificationService notificationService
     ) {
         this.interfaceRegistryService = interfaceRegistryService;
         this.executorRouter = executorRouter;
@@ -58,6 +61,7 @@ public class ExecutionOrchestrator {
         this.sensitiveDataMasker = sensitiveDataMasker;
         this.meterRegistry = meterRegistry;
         this.standardContractService = standardContractService;
+        this.notificationService = notificationService;
     }
 
     public ExecutionHistory executeManually(String interfaceCode, ExecuteInterfaceRequest request) {
@@ -134,6 +138,7 @@ public class ExecutionOrchestrator {
                     result.latencyMillis()
                 );
                 recordMetrics(interfaceCode, true, result.latencyMillis(), false);
+                checkSla(definition, result.latencyMillis());
                 return finished;
             }
             ExecutionHistory failed = executionPersistenceService.markFailed(
@@ -163,6 +168,19 @@ public class ExecutionOrchestrator {
             recordMetrics(interfaceCode, false, 0L, false);
             throw exception;
         }
+    }
+
+    private void checkSla(InterfaceDefinition definition, long latencyMillis) {
+        Long slaMillis = definition.getSlaMillis();
+        if (slaMillis == null || latencyMillis <= slaMillis) {
+            return;
+        }
+        Counter.builder("execution.sla_breach")
+            .tag("interfaceCode", definition.getInterfaceCode())
+            .register(meterRegistry)
+            .increment();
+        log.warn("[SLA] Breach — interfaceCode={}, latency={}ms, sla={}ms", definition.getInterfaceCode(), latencyMillis, slaMillis);
+        notificationService.sendSlaBreachAlert(definition.getInterfaceCode(), latencyMillis, slaMillis);
     }
 
     private void recordMetrics(String interfaceCode, boolean success, long latencyMillis, boolean suppressed) {

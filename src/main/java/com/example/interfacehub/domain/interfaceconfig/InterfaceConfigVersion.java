@@ -139,4 +139,8 @@ public class InterfaceConfigVersion {
     public String getMockResponseBody() {
         return mockResponseBody;
     }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
 }

@@ -1,0 +1,76 @@
+package com.example.interfacehub.application.scheduler;
+
+import java.time.LocalDateTime;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class RetentionService {
+
+    private static final Logger log = LoggerFactory.getLogger(RetentionService.class);
+
+    private final JdbcTemplate jdbcTemplate;
+    private final RetentionProperties retentionProperties;
+
+    public RetentionService(JdbcTemplate jdbcTemplate, RetentionProperties retentionProperties) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.retentionProperties = retentionProperties;
+    }
+
+    @Transactional
+    public RetentionResult archiveAndPurge() {
+        LocalDateTime execCutoff = LocalDateTime.now().minusDays(retentionProperties.getExecutionHistoryDays());
+        LocalDateTime auditCutoff = LocalDateTime.now().minusDays(retentionProperties.getAuditLogDays());
+
+        int execArchived = 0;
+        int execDeleted = 0;
+        int auditArchived = 0;
+        int auditDeleted = 0;
+
+        if (retentionProperties.isArchiveEnabled()) {
+            execArchived = jdbcTemplate.update("""
+                INSERT INTO archive_execution_history
+                    (id, execution_id, interface_code, protocol_type, trigger_type, status,
+                     started_at, ended_at, latency_millis, request_payload, response_payload,
+                     error_code, error_message)
+                SELECT id, execution_id, interface_code, protocol_type, trigger_type, status,
+                       started_at, ended_at, latency_millis, request_payload, response_payload,
+                       error_code, error_message
+                FROM execution_history
+                WHERE started_at < ?
+                  AND id NOT IN (SELECT id FROM archive_execution_history)
+                """, execCutoff);
+
+            auditArchived = jdbcTemplate.update("""
+                INSERT INTO archive_audit_log
+                    (id, actor, action, target_type, target_id, before_state, after_state, created_at)
+                SELECT id, actor, action, target_type, target_id, before_value, after_value, created_at
+                FROM audit_log
+                WHERE created_at < ?
+                  AND id NOT IN (SELECT id FROM archive_audit_log)
+                """, auditCutoff);
+        }
+
+        execDeleted = jdbcTemplate.update(
+            "DELETE FROM execution_history WHERE started_at < ?", execCutoff);
+
+        auditDeleted = jdbcTemplate.update(
+            "DELETE FROM audit_log WHERE created_at < ?", auditCutoff);
+
+        log.info("[Retention] execution_history: archived={}, deleted={}; audit_log: archived={}, deleted={}",
+            execArchived, execDeleted, auditArchived, auditDeleted);
+
+        return new RetentionResult(execArchived, execDeleted, auditArchived, auditDeleted, LocalDateTime.now());
+    }
+
+    public record RetentionResult(
+        int execArchived,
+        int execDeleted,
+        int auditArchived,
+        int auditDeleted,
+        LocalDateTime ranAt
+    ) {}
+}
