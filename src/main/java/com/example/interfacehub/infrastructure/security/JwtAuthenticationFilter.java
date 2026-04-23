@@ -19,10 +19,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
     private final AppUserDetailsService appUserDetailsService;
+    private final TokenBlacklistService tokenBlacklistService;
 
-    public JwtAuthenticationFilter(JwtTokenProvider jwtTokenProvider, AppUserDetailsService appUserDetailsService) {
+    public JwtAuthenticationFilter(
+        JwtTokenProvider jwtTokenProvider,
+        AppUserDetailsService appUserDetailsService,
+        TokenBlacklistService tokenBlacklistService
+    ) {
         this.jwtTokenProvider = jwtTokenProvider;
         this.appUserDetailsService = appUserDetailsService;
+        this.tokenBlacklistService = tokenBlacklistService;
     }
 
     @Override
@@ -34,7 +40,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         String bearerToken = request.getHeader(HttpHeaders.AUTHORIZATION);
         if (bearerToken != null && bearerToken.startsWith("Bearer ")) {
             String token = bearerToken.substring(7);
-            if (jwtTokenProvider.validate(token) && SecurityContextHolder.getContext().getAuthentication() == null) {
+            if (jwtTokenProvider.validate(token)
+                && !tokenBlacklistService.isBlacklisted(token)
+                && SecurityContextHolder.getContext().getAuthentication() == null) {
                 String username = jwtTokenProvider.extractUsername(token);
                 UserDetails userDetails = appUserDetailsService.loadUserByUsername(username);
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(

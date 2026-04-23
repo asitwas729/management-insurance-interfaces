@@ -38,6 +38,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> {
                 if (openEndpointsForTest) {
                     auth
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/v1/dlq/replay-requests/*/approve").hasRole("APPROVER")
                         .requestMatchers(HttpMethod.POST, "/api/v1/dlq/replay-requests/*/reject").hasRole("APPROVER")
                         .requestMatchers(HttpMethod.POST, "/api/v1/dlq/replay-requests/*/execute").hasRole("APPROVER")
@@ -49,6 +50,8 @@ public class SecurityConfig {
                 }
                 auth
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                 .requestMatchers("/", "/index.html", "/app.css", "/app.js").permitAll()
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/prometheus", "/actuator/metrics/**").permitAll()
@@ -63,6 +66,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/v1/dlq/replay-requests/*/approve").hasRole("APPROVER")
                 .requestMatchers(HttpMethod.POST, "/api/v1/dlq/replay-requests/*/reject").hasRole("APPROVER")
                 .requestMatchers(HttpMethod.POST, "/api/v1/dlq/replay-requests/*/execute").hasRole("APPROVER")
+                .requestMatchers("/api/v1/incidents/**").hasRole("ADMIN")
+                .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                .requestMatchers("/api/v1/schedules/**").hasAnyRole("APPROVER", "ADMIN")
                 .requestMatchers("/api/v1/**").hasAnyRole("OPERATOR", "APPROVER", "ADMIN")
                 .anyRequest().authenticated();
             })

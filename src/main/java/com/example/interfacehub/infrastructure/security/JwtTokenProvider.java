@@ -5,6 +5,8 @@ import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -49,6 +51,11 @@ public class JwtTokenProvider {
         } catch (RuntimeException exception) {
             return false;
         }
+    }
+
+    public LocalDateTime extractExpiry(String token) {
+        Date exp = parseClaims(token).getExpiration();
+        return exp.toInstant().atZone(ZoneId.systemDefault()).toLocalDateTime();
     }
 
     private Claims parseClaims(String token) {
