@@ -86,6 +86,14 @@ public class ExecutionHistory {
         this.endedAt = LocalDateTime.now();
     }
 
+    public void markCancelled(String message, long latencyMillis) {
+        this.status = ExecutionStatus.CANCELLED;
+        this.errorCode = "EXECUTION_CANCELLED";
+        this.errorMessage = message;
+        this.latencyMillis = latencyMillis;
+        this.endedAt = LocalDateTime.now();
+    }
+
     public Long getId() {
         return id;
     }

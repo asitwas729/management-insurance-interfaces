@@ -2,6 +2,7 @@ package com.example.interfacehub.application.mq;
 
 import com.example.interfacehub.application.audit.AuditLogService;
 import com.example.interfacehub.application.execution.ExecutionOrchestrator;
+import com.example.interfacehub.application.policy.PolicyExecutionContext;
 import com.example.interfacehub.common.error.BusinessException;
 import com.example.interfacehub.common.error.ErrorCode;
 import com.example.interfacehub.domain.execution.ExecutionHistory;
@@ -135,7 +136,8 @@ public class DlqReplayService {
             message.getInterfaceCode(),
             idempotencyKey,
             payload,
-            TriggerType.RETRY
+            TriggerType.RETRY,
+            PolicyExecutionContext.system(null)
         );
 
         message.markReplayed();

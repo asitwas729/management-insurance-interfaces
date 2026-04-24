@@ -1,6 +1,7 @@
 package com.example.interfacehub.application.scheduler;
 
 import com.example.interfacehub.application.execution.ExecutionOrchestrator;
+import com.example.interfacehub.application.policy.PolicyExecutionContext;
 import com.example.interfacehub.common.error.BusinessException;
 import com.example.interfacehub.domain.execution.TriggerType;
 import com.example.interfacehub.domain.scheduler.InterfaceSchedule;
@@ -81,7 +82,13 @@ public class InterfaceJobScheduler {
         try {
             Map<String, Object> payload = parsePayloadTemplate(payloadTemplate);
             String idempotencyKey = "SCHEDULED-" + interfaceCode + "-" + UUID.randomUUID().toString().substring(0, 8);
-            executionOrchestrator.executeByTrigger(interfaceCode, idempotencyKey, payload, TriggerType.SCHEDULED);
+            executionOrchestrator.executeByTrigger(
+                interfaceCode,
+                idempotencyKey,
+                payload,
+                TriggerType.SCHEDULED,
+                PolicyExecutionContext.system(null)
+            );
             log.info("[InterfaceJobScheduler] Scheduled execution triggered for '{}'", interfaceCode);
         } catch (BusinessException e) {
             log.warn("[InterfaceJobScheduler] Scheduled execution for '{}' failed: {}", interfaceCode, e.getMessage());

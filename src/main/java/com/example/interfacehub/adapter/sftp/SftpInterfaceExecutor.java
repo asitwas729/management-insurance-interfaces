@@ -5,9 +5,15 @@ import com.example.interfacehub.common.error.ErrorCode;
 import com.example.interfacehub.domain.execution.ExecutionContext;
 import com.example.interfacehub.domain.execution.ExecutionResult;
 import com.example.interfacehub.domain.interfaceconfig.ProtocolType;
+import com.example.interfacehub.infrastructure.resilience.ExternalCallResilienceService;
 import com.jcraft.jsch.ChannelSftp;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.URI;
@@ -15,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import org.springframework.stereotype.Component;
@@ -26,6 +33,20 @@ import org.springframework.stereotype.Component;
 @Component
 public class SftpInterfaceExecutor implements InterfaceExecutor {
 
+    private final ExternalCallResilienceService resilienceService;
+    private final MeterRegistry meterRegistry; // Add MeterRegistry
+    private final Tracer tracer; // Add Tracer
+
+    public SftpInterfaceExecutor(
+        ExternalCallResilienceService resilienceService,
+        MeterRegistry meterRegistry, // Inject MeterRegistry
+        Tracer tracer // Inject Tracer
+    ) {
+        this.resilienceService = resilienceService;
+        this.meterRegistry = meterRegistry;
+        this.tracer = tracer; // Assign Tracer
+    }
+
     @Override
     public ProtocolType supportType() {
         return ProtocolType.SFTP;
@@ -33,17 +54,65 @@ public class SftpInterfaceExecutor implements InterfaceExecutor {
 
     @Override
     public ExecutionResult execute(ExecutionContext context) {
-        long start = System.currentTimeMillis();
-        try {
-            URI endpoint = URI.create(context.endpoint());
-            if (!"sftp".equalsIgnoreCase(endpoint.getScheme())) {
-                return writeToLocalPath(context, endpoint, start);
+        Span span = tracer.spanBuilder("SftpInterfaceExecutor.execute").startSpan();
+        ExecutionResult result;
+        try (Scope scope = span.makeCurrent()) {
+            Timer timer = Timer.builder("execution.sftp.latency")
+                .tag("interfaceCode", context.interfaceCode())
+                .tag("outcome", "unknown") // Will be updated after execution
+                .register(meterRegistry);
+
+            result = executeSftpOperation(context);
+
+            // Update span and metrics based on the result
+            String outcome = result.success() ? "success" : "failure";
+            timer.record(Duration.ofMillis(result.latencyMillis()));
+            meterRegistry.counter("execution.sftp.count", "interfaceCode", context.interfaceCode(), "outcome", outcome).increment();
+
+            if (result.success()) {
+                span.setStatus(io.opentelemetry.api.trace.StatusCode.OK);
+                span.setAttribute("execution.outcome", "success");
+                span.setAttribute("execution.latency", result.latencyMillis());
+            } else {
+                span.setStatus(io.opentelemetry.api.trace.StatusCode.ERROR);
+                span.setAttribute("execution.outcome", "failure");
+                span.setAttribute("execution.error.code", result.errorCode());
+                span.setAttribute("execution.latency", result.latencyMillis());
             }
-            return putViaSftp(context, endpoint, start);
-        } catch (Exception exception) {
-            return ExecutionResult.failure(ErrorCode.SFTP_TRANSFER_FAILED.name(), exception.getMessage(), elapsed(start));
+            span.setAttribute("execution.interfaceCode", context.interfaceCode());
+
+        } catch (Throwable t) { // Catching Throwable to include potential RuntimeExceptions from resilienceService
+            // Handle exceptions from resilienceService or the lambda itself
+            span.setStatus(io.opentelemetry.api.trace.StatusCode.ERROR);
+            span.setAttribute("execution.outcome", "failure");
+            span.setAttribute("execution.error.code", ErrorCode.SFTP_TRANSFER_FAILED.name()); // Default error code for SFTP
+            span.recordException(t);
+            // Re-throw to ensure the orchestrator gets the exception
+            if (t instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new RuntimeException(t);
+        } finally {
+            span.end();
         }
+        return result;
     }
+
+    private ExecutionResult executeSftpOperation(ExecutionContext context) {
+        return resilienceService.execute(context.interfaceCode(), () -> {
+            long start = System.currentTimeMillis(); // Use a new start time for the actual operation
+            URI endpoint = URI.create(context.endpoint());
+            try {
+                if (!"sftp".equalsIgnoreCase(endpoint.getScheme())) {
+                    return writeToLocalPath(context, endpoint, start);
+                }
+                return putViaSftp(context, endpoint, start);
+            } catch (Exception exception) {
+                return ExecutionResult.failure(ErrorCode.SFTP_TRANSFER_FAILED.name(), exception.getMessage(), elapsed(start));
+            }
+        }, ErrorCode.SFTP_TRANSFER_FAILED);
+    }
+
 
     private ExecutionResult putViaSftp(ExecutionContext context, URI endpoint, long start) throws Exception {
         String[] auth = resolveAuth(context, endpoint);

@@ -1,6 +1,9 @@
 package com.example.interfacehub.application.execution;
 
 import com.example.interfacehub.application.notification.NotificationService;
+import com.example.interfacehub.application.policy.PolicyEnforcementService;
+import com.example.interfacehub.application.policy.PolicyExecutionContext;
+import com.example.interfacehub.application.policy.ResolvedPolicy;
 import com.example.interfacehub.application.registry.InterfaceRegistryService;
 import com.example.interfacehub.application.standard.StandardContractService;
 import com.example.interfacehub.common.error.BusinessException;
@@ -19,6 +22,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import io.opentelemetry.api.GlobalOpenTelemetry;
+import io.opentelemetry.api.trace.Tracer;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
@@ -26,9 +31,11 @@ import java.time.LocalDateTime;
 import org.springframework.http.HttpHeaders;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.util.StringUtils;
 
 @Service
 public class ExecutionOrchestrator {
@@ -43,7 +50,10 @@ public class ExecutionOrchestrator {
     private final MeterRegistry meterRegistry;
     private final StandardContractService standardContractService;
     private final NotificationService notificationService;
+    private final PolicyEnforcementService policyEnforcementService;
+    private final Tracer tracer; // Inject Tracer
 
+    @Autowired
     public ExecutionOrchestrator(
         InterfaceRegistryService interfaceRegistryService,
         ExecutorRouter executorRouter,
@@ -52,7 +62,9 @@ public class ExecutionOrchestrator {
         SensitiveDataMasker sensitiveDataMasker,
         MeterRegistry meterRegistry,
         StandardContractService standardContractService,
-        NotificationService notificationService
+        NotificationService notificationService,
+        PolicyEnforcementService policyEnforcementService,
+        Tracer tracer // Add Tracer to constructor
     ) {
         this.interfaceRegistryService = interfaceRegistryService;
         this.executorRouter = executorRouter;
@@ -62,28 +74,83 @@ public class ExecutionOrchestrator {
         this.meterRegistry = meterRegistry;
         this.standardContractService = standardContractService;
         this.notificationService = notificationService;
+        this.policyEnforcementService = policyEnforcementService;
+        this.tracer = tracer; // Assign Tracer
     }
 
-    public ExecutionHistory executeManually(String interfaceCode, ExecuteInterfaceRequest request) {
-        return executeByTrigger(interfaceCode, request.idempotencyKey(), request.payload(), TriggerType.MANUAL);
+    public ExecutionOrchestrator(
+        InterfaceRegistryService interfaceRegistryService,
+        ExecutorRouter executorRouter,
+        ExecutionPersistenceService executionPersistenceService,
+        ObjectMapper objectMapper,
+        SensitiveDataMasker sensitiveDataMasker,
+        MeterRegistry meterRegistry,
+        StandardContractService standardContractService,
+        NotificationService notificationService,
+        PolicyEnforcementService policyEnforcementService
+    ) {
+        this(
+            interfaceRegistryService,
+            executorRouter,
+            executionPersistenceService,
+            objectMapper,
+            sensitiveDataMasker,
+            meterRegistry,
+            standardContractService,
+            notificationService,
+            policyEnforcementService,
+            GlobalOpenTelemetry.getTracer("com.example.interfacehub.execution")
+        );
+    }
+
+    public ExecutionHistory executeManually(
+        String interfaceCode,
+        ExecuteInterfaceRequest request,
+        PolicyExecutionContext policyExecutionContext
+    ) {
+        return executeByTrigger(
+            interfaceCode,
+            request.idempotencyKey(),
+            request.payload(),
+            TriggerType.MANUAL,
+            policyExecutionContext
+        );
     }
 
     public ExecutionHistory executeRetry(String interfaceCode, String idempotencyKey, Map<String, Object> payload) {
-        return executeByTrigger(interfaceCode, idempotencyKey, payload, TriggerType.RETRY);
+        InterfaceDefinition definition = interfaceRegistryService.findByCode(interfaceCode);
+        return executeByTrigger(
+            interfaceCode,
+            idempotencyKey,
+            payload,
+            TriggerType.RETRY,
+            PolicyExecutionContext.system(definition.getExternalOrg())
+        );
     }
 
     public ExecutionHistory executeByTrigger(
         String interfaceCode,
         String idempotencyKey,
         Map<String, Object> payload,
-        TriggerType triggerType
+        TriggerType triggerType,
+        PolicyExecutionContext policyExecutionContext
     ) {
         InterfaceDefinition definition = interfaceRegistryService.findByCode(interfaceCode);
         InterfaceConfigVersion config = interfaceRegistryService.findPublishedConfig(definition);
         String executionId = UUID.randomUUID().toString();
+        PolicyExecutionContext effectivePolicyContext = ensurePolicyContext(policyExecutionContext, definition);
+        ResolvedPolicy policy = policyEnforcementService.resolveAndSnapshot(
+            executionId,
+            definition,
+            config.getTimeoutMillis(),
+            effectivePolicyContext
+        );
+
         executionPersistenceService.reserveIdempotencyKey(idempotencyKey, interfaceCode, executionId);
         String requestPayloadRaw = toJson(payload);
-        String requestPayloadMasked = sensitiveDataMasker.mask(requestPayloadRaw);
+        String requestPayloadForLog = policy.maskRequestPayload()
+            ? sensitiveDataMasker.mask(requestPayloadRaw)
+            : requestPayloadRaw;
 
         TriggerType effectiveTriggerType = config.isSandboxMode() ? TriggerType.SANDBOX : triggerType;
 
@@ -92,7 +159,7 @@ public class ExecutionOrchestrator {
             definition.getInterfaceCode(),
             definition.getProtocolType(),
             effectiveTriggerType,
-            requestPayloadMasked
+            requestPayloadForLog
         );
 
         boolean inMaintenanceWindow = standardContractService.isMaintenanceWindowActive(
@@ -103,7 +170,10 @@ public class ExecutionOrchestrator {
             ExecutionHistory suppressed = executionPersistenceService.markFailed(
                 runningHistory.getId(),
                 ErrorCode.EXT_MAINTENANCE.name(),
-                "Execution suppressed due to maintenance window of external org: " + definition.getExternalOrg(),
+                maskForResponsePolicy(
+                    "Execution suppressed due to maintenance window of external org: " + definition.getExternalOrg(),
+                    policy
+                ),
                 0L
             );
             recordMetrics(interfaceCode, false, 0L, true);
@@ -113,7 +183,7 @@ public class ExecutionOrchestrator {
         if (config.isSandboxMode()) {
             ExecutionHistory finished = executionPersistenceService.markSuccess(
                 runningHistory.getId(),
-                config.getMockResponseBody(),
+                maskForResponsePolicy(config.getMockResponseBody(), policy),
                 0L
             );
             recordMetrics(interfaceCode, true, 0L, false);
@@ -126,15 +196,15 @@ public class ExecutionOrchestrator {
             config.getEndpoint(),
             toHeaders(config.getHeadersJson(), interfaceCode),
             requestPayloadRaw,
-            config.getTimeoutMillis()
+            policy.timeoutMillis()
         );
 
         try {
-            ExecutionResult result = executorRouter.routeAndExecute(context);
+            ExecutionResult result = executeWithRetry(context, policy);
             if (result.success()) {
                 ExecutionHistory finished = executionPersistenceService.markSuccess(
                     runningHistory.getId(),
-                    sensitiveDataMasker.mask(result.responsePayload()),
+                    maskForResponsePolicy(result.responsePayload(), policy),
                     result.latencyMillis()
                 );
                 recordMetrics(interfaceCode, true, result.latencyMillis(), false);
@@ -144,7 +214,7 @@ public class ExecutionOrchestrator {
             ExecutionHistory failed = executionPersistenceService.markFailed(
                 runningHistory.getId(),
                 result.errorCode(),
-                sensitiveDataMasker.mask(result.errorMessage()),
+                maskForResponsePolicy(result.errorMessage(), policy),
                 result.latencyMillis()
             );
             recordMetrics(interfaceCode, false, result.latencyMillis(), false);
@@ -153,7 +223,7 @@ public class ExecutionOrchestrator {
             executionPersistenceService.markFailed(
                 runningHistory.getId(),
                 exception.getErrorCode().name(),
-                sensitiveDataMasker.mask(exception.getMessage()),
+                maskForResponsePolicy(exception.getMessage(), policy),
                 0L
             );
             recordMetrics(interfaceCode, false, 0L, false);
@@ -162,12 +232,76 @@ public class ExecutionOrchestrator {
             executionPersistenceService.markFailed(
                 runningHistory.getId(),
                 ErrorCode.INTERNAL_ERROR.name(),
-                sensitiveDataMasker.mask(exception.getMessage()),
+                maskForResponsePolicy(exception.getMessage(), policy),
                 0L
             );
             recordMetrics(interfaceCode, false, 0L, false);
             throw exception;
         }
+    }
+
+    private ExecutionResult executeWithRetry(ExecutionContext context, ResolvedPolicy policy) {
+        ExecutionResult lastResult = null;
+        for (int attempt = 0; attempt <= policy.retryMaxAttempts(); attempt++) {
+            ExecutionResult result = executorRouter.routeAndExecute(context);
+            lastResult = result;
+            if (result.success()) {
+                return result;
+            }
+            if (!isRetryableError(result.errorCode()) || attempt == policy.retryMaxAttempts()) {
+                return result;
+            }
+            if (policy.retryIntervalMillis() > 0) {
+                try {
+                    Thread.sleep(policy.retryIntervalMillis());
+                } catch (InterruptedException interruptedException) {
+                    Thread.currentThread().interrupt();
+                    return result;
+                }
+            }
+        }
+        return lastResult == null
+            ? ExecutionResult.failure(ErrorCode.INTERNAL_ERROR.name(), "Execution failed without result", 0L)
+            : lastResult;
+    }
+
+    private boolean isRetryableError(String errorCode) {
+        return ErrorCode.TIMEOUT.name().equals(errorCode)
+            || ErrorCode.REST_CALL_FAILED.name().equals(errorCode)
+            || ErrorCode.SOAP_CALL_FAILED.name().equals(errorCode)
+            || ErrorCode.SFTP_TRANSFER_FAILED.name().equals(errorCode)
+            || ErrorCode.BATCH_FAILED.name().equals(errorCode)
+            || ErrorCode.MQ_CONSUME_FAILED.name().equals(errorCode)
+            || ErrorCode.EXT_5XX.name().equals(errorCode)
+            || ErrorCode.CIRCUIT_OPEN.name().equals(errorCode)
+            || ErrorCode.RATE_LIMITED.name().equals(errorCode)
+            || ErrorCode.BULKHEAD_FULL.name().equals(errorCode);
+    }
+
+    private String maskForResponsePolicy(String raw, ResolvedPolicy policy) {
+        if (!policy.maskResponsePayload()) {
+            return raw;
+        }
+        return sensitiveDataMasker.mask(raw);
+    }
+
+    private PolicyExecutionContext ensurePolicyContext(
+        PolicyExecutionContext context,
+        InterfaceDefinition definition
+    ) {
+        if (context == null) {
+            return PolicyExecutionContext.system(definition.getExternalOrg());
+        }
+        String partnerId = StringUtils.hasText(context.partnerId()) ? context.partnerId() : definition.getExternalOrg();
+        return new PolicyExecutionContext(
+            context.clientId(),
+            context.clientSecret(),
+            context.apiKey(),
+            context.authorizationHeader(),
+            partnerId,
+            context.remoteIp(),
+            context.roles()
+        );
     }
 
     private void checkSla(InterfaceDefinition definition, long latencyMillis) {

@@ -75,4 +75,16 @@ public class ExecutionPersistenceService {
         idempotencyRecordRepository.findByExecutionId(history.getExecutionId()).ifPresent(IdempotencyRecord::markFailed);
         return history;
     }
+
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public ExecutionHistory markCancelledByExecutionId(String executionId, String message) {
+        ExecutionHistory history = executionHistoryRepository.findByExecutionId(executionId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.EXECUTION_NOT_FOUND));
+        long latency = history.getStartedAt() == null
+            ? 0L
+            : java.time.Duration.between(history.getStartedAt(), java.time.LocalDateTime.now()).toMillis();
+        history.markCancelled(message, Math.max(latency, 0L));
+        idempotencyRecordRepository.findByExecutionId(history.getExecutionId()).ifPresent(IdempotencyRecord::markFailed);
+        return history;
+    }
 }

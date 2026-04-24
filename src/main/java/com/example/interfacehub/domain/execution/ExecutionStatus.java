@@ -4,5 +4,6 @@ public enum ExecutionStatus {
     RUNNING,
     SUCCESS,
     FAILED,
-    TIMEOUT
+    TIMEOUT,
+    CANCELLED
 }

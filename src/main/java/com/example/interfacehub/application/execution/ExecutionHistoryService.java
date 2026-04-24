@@ -32,4 +32,13 @@ public class ExecutionHistoryService {
         }
         return history;
     }
+
+    /**
+     * Primary key (Long id)로 ExecutionHistory를 조회합니다.
+     */
+    @Transactional(readOnly = true)
+    public ExecutionHistory findById(Long id) {
+        return executionHistoryRepository.findById(id)
+            .orElseThrow(() -> new BusinessException(ErrorCode.EXECUTION_NOT_FOUND));
+    }
 }
