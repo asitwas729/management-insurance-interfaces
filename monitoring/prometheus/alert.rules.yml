@@ -1,0 +1,26 @@
+groups:
+- name: interfacehub_alerts
+  rules:
+  - alert: HighInterfaceFailureRate
+    expr: |
+      sum(rate(execution_count_total{outcome="failure"}[5m]))
+      /
+      (sum(rate(execution_count_total{outcome="success"}[5m])) + sum(rate(execution_count_total{outcome="failure"}[5m])))
+      * 100
+      > 5
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High failure rate detected for an interface"
+      description: "The failure rate for interface {{ $labels.interfaceCode }} has exceeded 5% over the last 5 minutes."
+
+  - alert: InterfaceSlaBreach
+    expr: |
+      sum(increase(execution_sla_breach_total[5m])) > 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Interface SLA breach detected"
+      description: "An SLA breach has been detected for interface {{ $labels.interfaceCode }}. Latency exceeded the defined SLA."
