@@ -8,32 +8,64 @@ import com.example.interfacehub.domain.interfaceconfig.ProtocolType;
 import com.example.interfacehub.infrastructure.resilience.ExternalCallResilienceService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
+import java.io.StringReader;
+import java.io.StringWriter;
+import java.net.SocketTimeoutException;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import javax.xml.XMLConstants;
+import javax.xml.transform.Result;
+import javax.xml.transform.Source;
+import javax.xml.transform.TransformerFactory;
+import javax.xml.transform.stream.StreamResult;
+import javax.xml.transform.stream.StreamSource;
+import org.springframework.oxm.Marshaller;
+import org.springframework.oxm.Unmarshaller;
 import org.springframework.stereotype.Component;
-import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientRequestException;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.util.MultiValueMap;
+import org.springframework.ws.WebServiceMessage;
+import org.springframework.ws.client.WebServiceIOException;
+import org.springframework.ws.client.WebServiceTransportException;
+import org.springframework.ws.client.core.WebServiceMessageCallback;
+import org.springframework.ws.client.core.WebServiceTemplate;
+import org.springframework.ws.soap.SoapMessage;
+import org.springframework.ws.soap.client.SoapFaultClientException;
+import org.springframework.ws.transport.http.HttpUrlConnectionMessageSender;
 
-/**
- * SOAP 어댑터 스켈레톤.
- * 실제 구현 시 Spring-WS WebServiceTemplate 기반으로 대체한다.
- */
 @Component
 public class SoapInterfaceExecutor implements InterfaceExecutor {
 
-    private final WebClient.Builder webClientBuilder;
+    private static final String DEFAULT_NAMESPACE = "http://interfacehub.example.com/soap";
+    private static final String DEFAULT_OPERATION = "ExecuteRequest";
+    private static final String SOAP_ACTION = "SOAPAction";
+    private static final String HEADER_SOAP_ACTION = "X-SOAP-Action";
+    private static final String HEADER_SOAP_NAMESPACE = "X-SOAP-Namespace";
+    private static final String HEADER_SOAP_OPERATION = "X-SOAP-Operation";
+
+    private final RawXmlOxMapper rawXmlOxMapper;
     private final ExternalCallResilienceService resilienceService;
     private final ObjectMapper objectMapper;
+    private final MeterRegistry meterRegistry; // Add MeterRegistry
+    private final Tracer tracer; // Add Tracer
 
     public SoapInterfaceExecutor(
-        WebClient.Builder webClientBuilder,
         ExternalCallResilienceService resilienceService,
-        ObjectMapper objectMapper
+        ObjectMapper objectMapper,
+        MeterRegistry meterRegistry, // Inject MeterRegistry
+        Tracer tracer // Inject Tracer
     ) {
-        this.webClientBuilder = webClientBuilder;
+        this.rawXmlOxMapper = new RawXmlOxMapper();
         this.resilienceService = resilienceService;
         this.objectMapper = objectMapper;
+        this.meterRegistry = meterRegistry;
+        this.tracer = tracer; // Assign Tracer
     }
 
     @Override
@@ -43,69 +75,277 @@ public class SoapInterfaceExecutor implements InterfaceExecutor {
 
     @Override
     public ExecutionResult execute(ExecutionContext context) {
-        return resilienceService.execute(context.interfaceCode(), () -> invoke(context), ErrorCode.SOAP_CALL_FAILED);
+        // Create a span for the SOAP execution
+        Span span = tracer.spanBuilder("SoapInterfaceExecutor.execute").startSpan();
+        ExecutionResult result;
+        try (Scope scope = span.makeCurrent()) {
+            // Record metrics for execution latency and outcome
+            Timer timer = Timer.builder("execution.soap.latency")
+                .tag("interfaceCode", context.interfaceCode())
+                .tag("outcome", "unknown") // Will be updated after execution
+                .register(meterRegistry);
+
+            long startTime = System.currentTimeMillis();
+            result = resilienceService.execute(context.interfaceCode(), () -> {
+                ExecutionResult invokeResult = invoke(context);
+                // Update span status and tags based on the outcome
+                if (invokeResult.success()) {
+                    span.setStatus(io.opentelemetry.api.trace.StatusCode.OK);
+                    span.setAttribute("execution.outcome", "success");
+                    span.setAttribute("execution.latency", invokeResult.latencyMillis());
+                } else {
+                    span.setStatus(io.opentelemetry.api.trace.StatusCode.ERROR);
+                    span.setAttribute("execution.outcome", "failure");
+                    span.setAttribute("execution.error.code", invokeResult.errorCode());
+                    span.setAttribute("execution.latency", invokeResult.latencyMillis());
+                }
+                return invokeResult;
+            }, ErrorCode.SOAP_CALL_FAILED);
+
+            // Record timer after resilience service completes
+            String outcome = result.success() ? "success" : "failure";
+            timer.record(Duration.ofMillis(result.latencyMillis()));
+            meterRegistry.counter("execution.soap.count", "interfaceCode", context.interfaceCode(), "outcome", outcome).increment();
+
+        } catch (Throwable t) { // Catching Throwable to include potential RuntimeExceptions from resilienceService
+            // Handle exceptions from resilienceService or the lambda itself
+            span.setStatus(io.opentelemetry.api.trace.StatusCode.ERROR);
+            span.setAttribute("execution.outcome", "failure");
+            if (t instanceof SoapFaultClientException) {
+                span.setAttribute("execution.error.code", ErrorCode.SOAP_FAULT.name());
+            } else if (t instanceof WebServiceTransportException) {
+                span.setAttribute("execution.error.code", resolveTransportErrorCode((WebServiceTransportException) t));
+            } else if (t instanceof WebServiceIOException) {
+                span.setAttribute("execution.error.code", resolveIoErrorCode((WebServiceIOException) t));
+            } else {
+                span.setAttribute("execution.error.code", ErrorCode.SOAP_CALL_FAILED.name());
+            }
+            span.recordException(t);
+            // Re-throw to ensure the orchestrator gets the exception
+            throw t;
+        } finally {
+            span.end();
+        }
+        return result;
     }
 
     private ExecutionResult invoke(ExecutionContext context) {
         long start = System.currentTimeMillis();
         try {
-            String response = webClientBuilder.build()
-                .post()
-                .uri(context.endpoint())
-                .headers(headers -> {
-                    headers.addAll(context.headers());
-                    headers.set("Content-Type", "text/xml;charset=UTF-8");
-                })
-                .bodyValue(toSoapBody(context.payload()))
-                .retrieve()
-                .bodyToMono(String.class)
-                .block(Duration.ofMillis(context.timeoutMillis()));
-
-            return ExecutionResult.success(response, elapsed(start));
-        } catch (IllegalStateException exception) {
-            return ExecutionResult.failure(ErrorCode.TIMEOUT.name(), exception.getMessage(), elapsed(start));
-        } catch (WebClientResponseException exception) {
-            if (exception.getStatusCode().is4xxClientError()) {
-                return ExecutionResult.failure(ErrorCode.EXT_4XX.name(), exception.getMessage(), elapsed(start));
-            }
-            if (exception.getStatusCode().is5xxServerError()) {
-                return ExecutionResult.failure(ErrorCode.EXT_5XX.name(), exception.getMessage(), elapsed(start));
-            }
-            return ExecutionResult.failure(ErrorCode.SOAP_CALL_FAILED.name(), exception.getMessage(), elapsed(start));
-        } catch (WebClientRequestException exception) {
-            return ExecutionResult.failure(ErrorCode.SOAP_CALL_FAILED.name(), exception.getMessage(), elapsed(start));
+            SoapRequest request = toSoapRequest(context);
+            WebServiceTemplate requestTemplate = createRequestTemplate(context.timeoutMillis());
+            Object response = requestTemplate.marshalSendAndReceive(
+                context.endpoint(),
+                new RawXmlPayload(request.bodyXml()),
+                soapActionCallback(request.soapAction())
+            );
+            return ExecutionResult.success(response == null ? "" : response.toString(), elapsed(start));
+        } catch (SoapFaultClientException exception) {
+            return ExecutionResult.failure(ErrorCode.SOAP_CALL_FAILED.name(), exception.getFaultStringOrReason(), elapsed(start));
+        } catch (WebServiceTransportException exception) {
+            return ExecutionResult.failure(resolveTransportErrorCode(exception), exception.getMessage(), elapsed(start));
+        } catch (WebServiceIOException exception) {
+            return ExecutionResult.failure(resolveIoErrorCode(exception), exception.getMessage(), elapsed(start));
         } catch (RuntimeException exception) {
             return ExecutionResult.failure(ErrorCode.SOAP_CALL_FAILED.name(), exception.getMessage(), elapsed(start));
         }
     }
 
-    private String toSoapBody(String payload) {
-        if (payload == null || payload.isBlank()) {
-            return defaultEnvelope("{}");
-        }
-        try {
-            Map<String, Object> parsed = objectMapper.readValue(payload, new TypeReference<>() {
-            });
-            Object soapXml = parsed.get("soapXml");
-            if (soapXml instanceof String soapRaw && !soapRaw.isBlank()) {
-                return soapRaw;
-            }
-        } catch (Exception ignored) {
-            // fall back to wrapping payload
-        }
-        return defaultEnvelope(payload);
+    private WebServiceTemplate createRequestTemplate(long timeoutMillis) {
+        WebServiceTemplate requestTemplate = new WebServiceTemplate();
+        requestTemplate.setMarshaller(rawXmlOxMapper);
+        requestTemplate.setUnmarshaller(rawXmlOxMapper);
+        HttpUrlConnectionMessageSender messageSender = new HttpUrlConnectionMessageSender();
+        Duration timeout = Duration.ofMillis(timeoutMillis);
+        messageSender.setConnectionTimeout(timeout);
+        messageSender.setReadTimeout(timeout);
+        requestTemplate.setMessageSender(messageSender);
+        return requestTemplate;
     }
 
-    private String defaultEnvelope(String payload) {
-        return """
-            <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
-              <soapenv:Body>
-                <ifh:ExecuteRequest xmlns:ifh="http://interfacehub.example.com/soap">
-                  <ifh:payload>%s</ifh:payload>
-                </ifh:ExecuteRequest>
-              </soapenv:Body>
-            </soapenv:Envelope>
-            """.formatted(escapeXml(payload));
+    private WebServiceMessageCallback soapActionCallback(String soapAction) {
+        return message -> {
+            applySoapHeaders(message, soapAction);
+        };
+    }
+
+    private void applySoapHeaders(WebServiceMessage message, String soapAction) {
+        if (soapAction == null || soapAction.isBlank() || !(message instanceof SoapMessage soapMessage)) {
+            return;
+        }
+        soapMessage.setSoapAction(soapAction);
+    }
+
+    private SoapRequest toSoapRequest(ExecutionContext context) {
+        if (context.payload() == null || context.payload().isBlank()) {
+            return new SoapRequest(defaultBody(DEFAULT_OPERATION, DEFAULT_NAMESPACE, Map.of("payload", "")), resolveHeader(context.headers(), SOAP_ACTION));
+        }
+
+        try {
+            Map<String, Object> parsed = objectMapper.readValue(context.payload(), new TypeReference<>() {
+            });
+            String soapAction = firstNonBlank(
+                stringValue(parsed.get("soapAction")),
+                resolveHeader(context.headers(), SOAP_ACTION),
+                resolveHeader(context.headers(), HEADER_SOAP_ACTION)
+            );
+            String rawSoapXml = stringValue(parsed.get("soapXml"));
+            if (rawSoapXml != null && !rawSoapXml.isBlank()) {
+                return new SoapRequest(toBodyPayload(rawSoapXml), soapAction);
+            }
+
+            String namespace = firstNonBlank(
+                stringValue(parsed.get("namespace")),
+                resolveHeader(context.headers(), HEADER_SOAP_NAMESPACE),
+                DEFAULT_NAMESPACE
+            );
+            String operation = firstNonBlank(
+                stringValue(parsed.get("operation")),
+                stringValue(parsed.get("operationName")),
+                resolveHeader(context.headers(), HEADER_SOAP_OPERATION),
+                DEFAULT_OPERATION
+            );
+            Object body = parsed.getOrDefault("body", withoutSoapMetadata(parsed));
+            return new SoapRequest(defaultBody(operation, namespace, body), soapAction);
+        } catch (Exception ignored) {
+            String soapAction = firstNonBlank(resolveHeader(context.headers(), SOAP_ACTION), resolveHeader(context.headers(), HEADER_SOAP_ACTION));
+            String rawPayload = context.payload().trim();
+            String bodyXml = rawPayload.startsWith("<")
+                ? toBodyPayload(rawPayload)
+                : defaultBody(DEFAULT_OPERATION, DEFAULT_NAMESPACE, Map.of("payload", context.payload()));
+            return new SoapRequest(bodyXml, soapAction);
+        }
+    }
+
+    private String toBodyPayload(String xml) {
+        if (xml == null) {
+            return "";
+        }
+        String trimmed = xml.trim();
+        if (!trimmed.matches("(?is).*<[^>]*:?Envelope\\b.*")) {
+            return trimmed;
+        }
+        return trimmed.replaceFirst("(?is)^.*<[^>]*:?Body[^>]*>", "")
+            .replaceFirst("(?is)</[^>]*:?Body>.*$", "")
+            .trim();
+    }
+
+    private Map<String, Object> withoutSoapMetadata(Map<String, Object> parsed) {
+        Map<String, Object> result = new LinkedHashMap<>(parsed);
+        result.remove("soapAction");
+        result.remove("soapXml");
+        result.remove("namespace");
+        result.remove("operation");
+        result.remove("operationName");
+        return result;
+    }
+
+    private String defaultBody(String operation, String namespace, Object body) {
+        String nsPrefix = "ifh";
+        return "<%s:%s xmlns:%s=\"%s\">%s</%s:%s>".formatted(
+            nsPrefix,
+            safeXmlName(operation, DEFAULT_OPERATION),
+            nsPrefix,
+            escapeXml(namespace),
+            toXmlElements(body),
+            nsPrefix,
+            safeXmlName(operation, DEFAULT_OPERATION)
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private String toXmlElements(Object value) {
+        if (value == null) {
+            return "";
+        }
+        if (value instanceof Map<?, ?> map) {
+            StringBuilder builder = new StringBuilder();
+            map.forEach((key, childValue) -> {
+                String rawKey = String.valueOf(key);
+                String elementName = safeXmlName(rawKey);
+                if (elementName == null) {
+                    builder.append("<field name=\"").append(escapeXml(rawKey)).append("\">")
+                        .append(toXmlElements(childValue))
+                        .append("</field>");
+                    return;
+                }
+                builder.append("<").append(elementName).append(">")
+                    .append(toXmlElements(childValue))
+                    .append("</").append(elementName).append(">");
+            });
+            return builder.toString();
+        }
+        if (value instanceof List<?> list) {
+            StringBuilder builder = new StringBuilder();
+            for (Object item : list) {
+                builder.append("<item>").append(toXmlElements(item)).append("</item>");
+            }
+            return builder.toString();
+        }
+        return escapeXml(String.valueOf(value));
+    }
+
+    private String resolveHeader(MultiValueMap<String, String> headers, String headerName) {
+        if (headers == null || headerName == null) {
+            return null;
+        }
+        String exact = headers.getFirst(headerName);
+        if (exact != null) {
+            return exact;
+        }
+        for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
+            if (headerName.equalsIgnoreCase(entry.getKey()) && !entry.getValue().isEmpty()) {
+                return entry.getValue().get(0);
+            }
+        }
+        return null;
+    }
+
+    private String resolveTransportErrorCode(WebServiceTransportException exception) {
+        String message = exception.getMessage();
+        if (message != null && message.matches(".*\\b4\\d\\d\\b.*")) {
+            return ErrorCode.EXT_4XX.name();
+        }
+        if (message != null && message.matches(".*\\b5\\d\\d\\b.*")) {
+            return ErrorCode.EXT_5XX.name();
+        }
+        return ErrorCode.SOAP_CALL_FAILED.name();
+    }
+
+    private String resolveIoErrorCode(WebServiceIOException exception) {
+        Throwable cause = exception.getCause();
+        while (cause != null) {
+            if (cause instanceof SocketTimeoutException) {
+                return ErrorCode.TIMEOUT.name();
+            }
+            cause = cause.getCause();
+        }
+        return ErrorCode.SOAP_CALL_FAILED.name();
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String stringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    private String safeXmlName(String candidate, String fallback) {
+        String safeName = safeXmlName(candidate);
+        return safeName == null ? fallback : safeName;
+    }
+
+    private String safeXmlName(String candidate) {
+        if (candidate == null || !candidate.matches("[A-Za-z_][A-Za-z0-9_.-]*")) {
+            return null;
+        }
+        return candidate;
     }
 
     private String escapeXml(String raw) {
@@ -119,5 +359,38 @@ public class SoapInterfaceExecutor implements InterfaceExecutor {
 
     private long elapsed(long start) {
         return System.currentTimeMillis() - start;
+    }
+
+    private static class RawXmlOxMapper implements Marshaller, Unmarshaller {
+
+        @Override
+        public boolean supports(Class<?> clazz) {
+            return RawXmlPayload.class.isAssignableFrom(clazz);
+        }
+
+        @Override
+        public void marshal(Object graph, Result result) {
+            RawXmlPayload payload = (RawXmlPayload) graph;
+            transform(new StreamSource(new StringReader(payload.xml())), result);
+        }
+
+        @Override
+        public Object unmarshal(Source source) {
+            StringWriter writer = new StringWriter();
+            transform(source, new StreamResult(writer));
+            return writer.toString();
+        }
+
+        private void transform(Source source, Result result) {
+            try {
+                TransformerFactory factory = TransformerFactory.newInstance();
+                factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+                factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+                factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, "");
+                factory.newTransformer().transform(source, result);
+            } catch (Exception exception) {
+                throw new IllegalArgumentException("SOAP XML transform failed", exception);
+            }
+        }
     }
 }
