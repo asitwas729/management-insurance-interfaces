@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import com.example.interfacehub.application.auth.RegistrationService;
 
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -21,9 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final RegistrationService registrationService;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, RegistrationService registrationService) {
         this.authService = authService;
+        this.registrationService = registrationService;
     }
 
     @PostMapping("/login")
@@ -58,5 +61,18 @@ public class AuthController {
         if (authorization != null && authorization.startsWith("Bearer ")) {
             authService.logout(authorization.substring(7));
         }
+    }
+
+    @PostMapping("/register")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Register", description = "Creates a new user (self-signup may be disabled by config)")
+    @ApiResponses({
+        @ApiResponse(responseCode = "201", description = "User created"),
+        @ApiResponse(responseCode = "409", description = "Username already exists"),
+        @ApiResponse(responseCode = "403", description = "Forbidden")
+    })
+    public RegisterResponse register(@Valid @RequestBody RegisterRequest request) {
+        var user = registrationService.registerSelf(request);
+        return new RegisterResponse(user.getUsername(), user.getRoles(), user.getCreatedAt());
     }
 }

@@ -61,8 +61,19 @@ public class AuthService {
         String clientIp = getClientIp();
         String limitKey = "login:" + request.username() + ":" + clientIp;
         
-        // "loginRateLimiter" 설정을 기반으로 유저+IP별 개별 림리터 생성
-        RateLimiter limiter = rateLimiterRegistry.rateLimiter(limitKey, "loginRateLimiter");
+        // Use custom config if "loginRateLimiter" not found (fallback to safe defaults)
+        RateLimiter limiter;
+        try {
+            limiter = rateLimiterRegistry.rateLimiter(limitKey, "loginRateLimiter");
+        } catch (Exception e) {
+            RateLimiterConfig config = rateLimiterRegistry.getConfiguration("loginRateLimiter")
+                .orElse(RateLimiterConfig.custom()
+                    .limitForPeriod(5)
+                    .limitRefreshPeriod(Duration.ofMinutes(1))
+                    .timeoutDuration(Duration.ZERO)
+                    .build());
+            limiter = rateLimiterRegistry.rateLimiter(limitKey, config);
+        }
 
         return RateLimiter.decorateSupplier(limiter, () -> {
             try {
@@ -77,7 +88,6 @@ public class AuthService {
 
                 return LoginResponse.bearer(accessToken, refreshToken.getToken());
             } catch (Exception e) {
-                // 인증 실패 감사 로그 기록 (인증 과정에서의 예외 처리)
                 auditLogService.record(
                     request.username(),
                     AuditAction.AUTHENTICATION_FAILED,
