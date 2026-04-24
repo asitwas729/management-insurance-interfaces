@@ -16,7 +16,9 @@ public record ExecutionHistoryResponse(
     LocalDateTime endedAt,
     Long latencyMillis,
     String errorCode,
-    String errorMessage
+    String errorMessage,
+    String requestPayload,
+    String responsePayload
 ) {
     public static ExecutionHistoryResponse from(ExecutionHistory history) {
         return new ExecutionHistoryResponse(
@@ -29,7 +31,9 @@ public record ExecutionHistoryResponse(
             history.getEndedAt(),
             history.getLatencyMillis(),
             history.getErrorCode(),
-            history.getErrorMessage()
+            history.getErrorMessage(),
+            history.getRequestPayload(),
+            history.getResponsePayload()
         );
     }
 }
