@@ -2,6 +2,7 @@ package com.example.interfacehub.infrastructure.persistence;
 
 import com.example.interfacehub.domain.interfaceconfig.InterfaceConfigVersion;
 import com.example.interfacehub.domain.interfaceconfig.InterfaceDefinition;
+import com.example.interfacehub.domain.interfaceconfig.RuntimeEnvironment;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
@@ -17,10 +18,29 @@ public interface InterfaceConfigVersionRepository extends JpaRepository<Interfac
     Optional<InterfaceConfigVersion> findByInterfaceDefinitionAndPublishedTrue(InterfaceDefinition interfaceDefinition);
 
     @EntityGraph(attributePaths = {"interfaceDefinition"})
+    Optional<InterfaceConfigVersion> findByInterfaceDefinitionAndEnvironmentAndPublishedTrue(
+        InterfaceDefinition interfaceDefinition,
+        RuntimeEnvironment environment
+    );
+
+    @EntityGraph(attributePaths = {"interfaceDefinition"})
     List<InterfaceConfigVersion> findByInterfaceDefinition(InterfaceDefinition interfaceDefinition);
 
     @EntityGraph(attributePaths = {"interfaceDefinition"})
+    List<InterfaceConfigVersion> findByInterfaceDefinitionAndEnvironment(
+        InterfaceDefinition interfaceDefinition,
+        RuntimeEnvironment environment
+    );
+
+    @EntityGraph(attributePaths = {"interfaceDefinition"})
     Page<InterfaceConfigVersion> findByInterfaceDefinitionOrderByVersionDesc(InterfaceDefinition interfaceDefinition, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"interfaceDefinition"})
+    Page<InterfaceConfigVersion> findByInterfaceDefinitionAndEnvironmentOrderByVersionDesc(
+        InterfaceDefinition interfaceDefinition,
+        RuntimeEnvironment environment,
+        Pageable pageable
+    );
 
     int countByInterfaceDefinition(InterfaceDefinition interfaceDefinition);
 

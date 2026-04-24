@@ -1,5 +1,6 @@
 package com.example.interfacehub.presentation;
 
+import com.example.interfacehub.domain.interfaceconfig.CallDirection;
 import com.example.interfacehub.domain.interfaceconfig.InterfaceDefinition;
 import com.example.interfacehub.domain.interfaceconfig.InterfaceStatus;
 import com.example.interfacehub.domain.interfaceconfig.ProtocolType;
@@ -11,7 +12,9 @@ public record InterfaceResponse(
     String name,
     ProtocolType protocolType,
     String ownerTeam,
+    String businessCategory,
     String externalOrg,
+    CallDirection callDirection,
     Long slaMillis,
     InterfaceStatus status,
     Integer configCount,
@@ -24,7 +27,9 @@ public record InterfaceResponse(
             definition.getName(),
             definition.getProtocolType(),
             definition.getOwnerTeam(),
+            definition.getBusinessCategory(),
             definition.getExternalOrg(),
+            definition.getCallDirection(),
             definition.getSlaMillis(),
             definition.getStatus(),
             null,
@@ -43,7 +48,9 @@ public record InterfaceResponse(
             definition.getName(),
             definition.getProtocolType(),
             definition.getOwnerTeam(),
+            definition.getBusinessCategory(),
             definition.getExternalOrg(),
+            definition.getCallDirection(),
             definition.getSlaMillis(),
             definition.getStatus(),
             configCount,

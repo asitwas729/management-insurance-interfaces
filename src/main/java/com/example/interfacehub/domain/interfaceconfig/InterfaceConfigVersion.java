@@ -34,6 +34,27 @@ public class InterfaceConfigVersion {
     @Column(nullable = false)
     private Long timeoutMillis;
 
+    @Column(nullable = false, length = 20)
+    private RuntimeEnvironment environment;
+
+    @Column(columnDefinition = "TEXT")
+    private String protocolConfigJson;
+
+    @Column(columnDefinition = "TEXT")
+    private String requestSample;
+
+    @Column(columnDefinition = "TEXT")
+    private String responseSample;
+
+    @Column(columnDefinition = "TEXT")
+    private String mappingRuleText;
+
+    @Column(columnDefinition = "TEXT")
+    private String fieldDescriptionText;
+
+    @Column(columnDefinition = "TEXT")
+    private String errorCodeGuideText;
+
     @Column(nullable = false)
     private boolean published;
 
@@ -58,7 +79,14 @@ public class InterfaceConfigVersion {
         String endpoint,
         String authType,
         String headersJson,
-        Long timeoutMillis
+        Long timeoutMillis,
+        RuntimeEnvironment environment,
+        String protocolConfigJson,
+        String requestSample,
+        String responseSample,
+        String mappingRuleText,
+        String fieldDescriptionText,
+        String errorCodeGuideText
     ) {
         this.interfaceDefinition = interfaceDefinition;
         this.version = version;
@@ -66,6 +94,13 @@ public class InterfaceConfigVersion {
         this.authType = authType;
         this.headersJson = headersJson;
         this.timeoutMillis = timeoutMillis;
+        this.environment = environment;
+        this.protocolConfigJson = protocolConfigJson;
+        this.requestSample = requestSample;
+        this.responseSample = responseSample;
+        this.mappingRuleText = mappingRuleText;
+        this.fieldDescriptionText = fieldDescriptionText;
+        this.errorCodeGuideText = errorCodeGuideText;
         this.published = false;
         this.sandboxMode = false;
         this.createdAt = LocalDateTime.now();
@@ -79,7 +114,53 @@ public class InterfaceConfigVersion {
         String headersJson,
         Long timeoutMillis
     ) {
-        return new InterfaceConfigVersion(interfaceDefinition, version, endpoint, authType, headersJson, timeoutMillis);
+        return new InterfaceConfigVersion(
+            interfaceDefinition,
+            version,
+            endpoint,
+            authType,
+            headersJson,
+            timeoutMillis,
+            RuntimeEnvironment.PROD,
+            "{}",
+            null,
+            null,
+            null,
+            null,
+            null
+        );
+    }
+
+    public static InterfaceConfigVersion create(
+        InterfaceDefinition interfaceDefinition,
+        Integer version,
+        String endpoint,
+        String authType,
+        String headersJson,
+        Long timeoutMillis,
+        RuntimeEnvironment environment,
+        String protocolConfigJson,
+        String requestSample,
+        String responseSample,
+        String mappingRuleText,
+        String fieldDescriptionText,
+        String errorCodeGuideText
+    ) {
+        return new InterfaceConfigVersion(
+            interfaceDefinition,
+            version,
+            endpoint,
+            authType,
+            headersJson,
+            timeoutMillis,
+            environment,
+            protocolConfigJson,
+            requestSample,
+            responseSample,
+            mappingRuleText,
+            fieldDescriptionText,
+            errorCodeGuideText
+        );
     }
 
     public void configureSandbox(boolean sandboxMode, Integer mockHttpStatus, String mockResponseBody) {
@@ -122,6 +203,34 @@ public class InterfaceConfigVersion {
 
     public Long getTimeoutMillis() {
         return timeoutMillis;
+    }
+
+    public RuntimeEnvironment getEnvironment() {
+        return environment;
+    }
+
+    public String getProtocolConfigJson() {
+        return protocolConfigJson;
+    }
+
+    public String getRequestSample() {
+        return requestSample;
+    }
+
+    public String getResponseSample() {
+        return responseSample;
+    }
+
+    public String getMappingRuleText() {
+        return mappingRuleText;
+    }
+
+    public String getFieldDescriptionText() {
+        return fieldDescriptionText;
+    }
+
+    public String getErrorCodeGuideText() {
+        return errorCodeGuideText;
     }
 
     public boolean isPublished() {

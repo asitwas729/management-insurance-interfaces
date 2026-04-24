@@ -1,6 +1,7 @@
 package com.example.interfacehub.presentation;
 
 import com.example.interfacehub.application.registry.InterfaceRegistryService;
+import com.example.interfacehub.domain.interfaceconfig.RuntimeEnvironment;
 import com.example.interfacehub.infrastructure.persistence.ExecutionHistoryRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -115,11 +116,26 @@ public class InterfaceRegistryController {
     })
     public PagedResponse<ConfigResponse> findConfigs(
         @PathVariable String interfaceCode,
+        @RequestParam(required = false) RuntimeEnvironment environment,
         @PageableDefault(size = 20, sort = "version", direction = Sort.Direction.DESC) Pageable pageable
     ) {
         return PagedResponse.from(
-            interfaceRegistryService.findConfigsByCode(interfaceCode, pageable).map(ConfigResponse::from)
+            interfaceRegistryService.findConfigsByCode(interfaceCode, environment, pageable).map(ConfigResponse::from)
         );
+    }
+
+    @GetMapping("/{interfaceCode}/configs/compare")
+    @Operation(summary = "Compare config versions", description = "Compares two configuration versions and returns changed fields")
+    @ApiResponses({
+        @ApiResponse(responseCode = "200", description = "Comparison returned"),
+        @ApiResponse(responseCode = "404", description = "Interface or config not found")
+    })
+    public ConfigComparisonResponse compareConfigs(
+        @PathVariable String interfaceCode,
+        @RequestParam Integer leftVersion,
+        @RequestParam Integer rightVersion
+    ) {
+        return interfaceRegistryService.compareConfigVersions(interfaceCode, leftVersion, rightVersion);
     }
 
     @GetMapping("/{interfaceCode}/configs/{configId}")

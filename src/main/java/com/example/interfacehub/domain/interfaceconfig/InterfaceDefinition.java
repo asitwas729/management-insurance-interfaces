@@ -32,7 +32,14 @@ public class InterfaceDefinition {
     private String ownerTeam;
 
     @Column(nullable = false, length = 100)
+    private String businessCategory;
+
+    @Column(nullable = false, length = 100)
     private String externalOrg;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 30)
+    private CallDirection callDirection;
 
     private Long slaMillis;
 
@@ -56,14 +63,18 @@ public class InterfaceDefinition {
         String name,
         ProtocolType protocolType,
         String ownerTeam,
+        String businessCategory,
         String externalOrg,
+        CallDirection callDirection,
         Long slaMillis
     ) {
         this.interfaceCode = interfaceCode;
         this.name = name;
         this.protocolType = protocolType;
         this.ownerTeam = ownerTeam;
+        this.businessCategory = businessCategory;
         this.externalOrg = externalOrg;
+        this.callDirection = callDirection;
         this.slaMillis = slaMillis;
         this.status = InterfaceStatus.ACTIVE;
     }
@@ -76,7 +87,38 @@ public class InterfaceDefinition {
         String externalOrg,
         Long slaMillis
     ) {
-        return new InterfaceDefinition(interfaceCode, name, protocolType, ownerTeam, externalOrg, slaMillis);
+        return new InterfaceDefinition(
+            interfaceCode,
+            name,
+            protocolType,
+            ownerTeam,
+            "GENERAL",
+            externalOrg,
+            CallDirection.OUTBOUND,
+            slaMillis
+        );
+    }
+
+    public static InterfaceDefinition create(
+        String interfaceCode,
+        String name,
+        ProtocolType protocolType,
+        String ownerTeam,
+        String businessCategory,
+        String externalOrg,
+        CallDirection callDirection,
+        Long slaMillis
+    ) {
+        return new InterfaceDefinition(
+            interfaceCode,
+            name,
+            protocolType,
+            ownerTeam,
+            businessCategory,
+            externalOrg,
+            callDirection,
+            slaMillis
+        );
     }
 
     public Long getId() {
@@ -99,8 +141,16 @@ public class InterfaceDefinition {
         return ownerTeam;
     }
 
+    public String getBusinessCategory() {
+        return businessCategory;
+    }
+
     public String getExternalOrg() {
         return externalOrg;
+    }
+
+    public CallDirection getCallDirection() {
+        return callDirection;
     }
 
     public Long getSlaMillis() {

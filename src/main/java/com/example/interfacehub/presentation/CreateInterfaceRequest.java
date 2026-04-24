@@ -1,5 +1,6 @@
 package com.example.interfacehub.presentation;
 
+import com.example.interfacehub.domain.interfaceconfig.CallDirection;
 import com.example.interfacehub.domain.interfaceconfig.ProtocolType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -17,7 +18,9 @@ public record CreateInterfaceRequest(
     @NotBlank String name,
     @NotNull ProtocolType protocolType,
     @NotBlank String ownerTeam,
+    String businessCategory,
     String externalOrg,
+    CallDirection callDirection,
 
     @Positive Long slaMillis
 ) {
