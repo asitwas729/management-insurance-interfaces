@@ -46,4 +46,17 @@ public interface InterfaceConfigVersionRepository extends JpaRepository<Interfac
 
     @Query("select coalesce(max(c.version), 0) from InterfaceConfigVersion c where c.interfaceDefinition = :definition")
     int findMaxVersionByInterfaceDefinition(@Param("definition") InterfaceDefinition definition);
+
+    @EntityGraph(attributePaths = {"interfaceDefinition"})
+    @Query("""
+        select c
+        from InterfaceConfigVersion c
+        join c.interfaceDefinition d
+        where lower(d.interfaceCode) like lower(concat('%', :q, '%'))
+           or lower(d.name) like lower(concat('%', :q, '%'))
+           or lower(c.endpoint) like lower(concat('%', :q, '%'))
+           or lower(coalesce(c.authType, '')) like lower(concat('%', :q, '%'))
+        order by c.createdAt desc
+        """)
+    Page<InterfaceConfigVersion> search(@Param("q") String q, Pageable pageable);
 }
