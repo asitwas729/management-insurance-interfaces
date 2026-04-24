@@ -2,8 +2,11 @@ package com.example.interfacehub.presentation;
 
 import com.example.interfacehub.application.dashboard.DashboardSummaryService;
 import com.example.interfacehub.application.dashboard.DashboardSummaryService.DashboardSummary;
+import com.example.interfacehub.presentation.response.InterfaceStatResponse;
+import com.example.interfacehub.presentation.response.SlaBreachSummaryResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -26,5 +29,20 @@ public class DashboardController {
         DashboardSummary summary = dashboardSummaryService.summary(windowHours);
         return DashboardSummaryResponse.from(summary);
     }
-}
 
+    @GetMapping("/interfaces")
+    @Operation(summary = "Get per-interface statistics")
+    public List<InterfaceStatResponse> interfaceStats(@RequestParam(defaultValue = "24") int windowHours) {
+        return dashboardSummaryService.interfaceStats(windowHours).stream()
+            .map(InterfaceStatResponse::from)
+            .toList();
+    }
+
+    @GetMapping("/sla-breaches")
+    @Operation(summary = "Get SLA breach summary per interface")
+    public List<SlaBreachSummaryResponse> slaBreaches(@RequestParam(defaultValue = "24") int windowHours) {
+        return dashboardSummaryService.slaBreaches(windowHours).stream()
+            .map(SlaBreachSummaryResponse::from)
+            .toList();
+    }
+}
