@@ -22,6 +22,8 @@ public interface ExecutionHistoryRepository extends JpaRepository<ExecutionHisto
 
     long countByStatus(ExecutionStatus status);
 
+    long countByStatusAndStartedAtAfter(ExecutionStatus status, LocalDateTime since);
+
     long countByInterfaceCodeAndStatus(String interfaceCode, ExecutionStatus status);
 
     @Query("SELECT e FROM ExecutionHistory e WHERE e.status = :status AND e.startedAt >= :since ORDER BY e.startedAt DESC")
@@ -41,4 +43,31 @@ public interface ExecutionHistoryRepository extends JpaRepository<ExecutionHisto
         order by e.startedAt desc
         """)
     Page<ExecutionHistory> search(@Param("q") String q, Pageable pageable);
+
+    interface InterfaceStatProjection {
+        String getInterfaceCode();
+
+        Double getAvgLatency();
+
+        LocalDateTime getLastExecutedAt();
+
+        Long getTotal();
+
+        Long getSuccessCount();
+    }
+
+    @Query("""
+        SELECT e.interfaceCode AS interfaceCode,
+               AVG(e.latencyMillis) AS avgLatency,
+               MAX(e.startedAt) AS lastExecutedAt,
+               COUNT(e) AS total,
+               SUM(CASE WHEN e.status = :success THEN 1 ELSE 0 END) AS successCount
+        FROM ExecutionHistory e
+        WHERE e.startedAt >= :since
+        GROUP BY e.interfaceCode
+        """)
+    List<InterfaceStatProjection> findInterfaceStatsSince(
+        @Param("since") LocalDateTime since,
+        @Param("success") ExecutionStatus success
+    );
 }
