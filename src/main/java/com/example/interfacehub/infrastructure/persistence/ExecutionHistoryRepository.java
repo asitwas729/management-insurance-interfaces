@@ -30,4 +30,15 @@ public interface ExecutionHistoryRepository extends JpaRepository<ExecutionHisto
         @Param("since") LocalDateTime since,
         Pageable pageable
     );
+
+    @Query("""
+        select e
+        from ExecutionHistory e
+        where lower(e.executionId) like lower(concat('%', :q, '%'))
+           or lower(e.interfaceCode) like lower(concat('%', :q, '%'))
+           or lower(coalesce(e.errorCode, '')) like lower(concat('%', :q, '%'))
+           or lower(coalesce(e.errorMessage, '')) like lower(concat('%', :q, '%'))
+        order by e.startedAt desc
+        """)
+    Page<ExecutionHistory> search(@Param("q") String q, Pageable pageable);
 }
