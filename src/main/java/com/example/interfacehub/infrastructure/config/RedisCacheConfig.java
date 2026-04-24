@@ -18,12 +18,12 @@ public class RedisCacheConfig {
     public CacheManager cacheManager(RedisConnectionFactory connectionFactory) {
         RedisCacheConfiguration defaults = RedisCacheConfiguration.defaultCacheConfig()
             .entryTtl(Duration.ofMinutes(5));
-
-        Map<String, RedisCacheConfiguration> cacheConfigurations = Map.of(
-            "interface", defaults.entryTtl(Duration.ofMinutes(5)),
-            "published-config", defaults.entryTtl(Duration.ofMinutes(1)),
-            "error-catalog", defaults.entryTtl(Duration.ofMinutes(10)),
-            "maintenance", defaults.entryTtl(Duration.ofMinutes(1))
+        Map<String, RedisCacheConfiguration> cacheConfigurations = Map.ofEntries(
+            Map.entry("interface", defaults.entryTtl(Duration.ofMinutes(5))),
+            Map.entry("published-config", defaults.entryTtl(Duration.ofMinutes(1))),
+            Map.entry("error-catalog", defaults.entryTtl(Duration.ofMinutes(10))),
+            Map.entry("maintenance", defaults.entryTtl(Duration.ofMinutes(1))),
+            Map.entry("dashboard", defaults.entryTtl(Duration.ofSeconds(60)))
         );
 
         return RedisCacheManager.builder(connectionFactory)

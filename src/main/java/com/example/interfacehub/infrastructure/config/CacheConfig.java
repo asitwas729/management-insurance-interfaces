@@ -28,6 +28,13 @@ public class CacheConfig {
             .expireAfterWrite(Duration.ofMinutes(30))
             .maximumSize(10_000)
             .recordStats());
+
+        manager.registerCustomCache("dashboard",
+            Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofSeconds(60))
+                .maximumSize(100)
+                .recordStats()
+                .<Object, Object>buildAsync());
         return manager;
     }
 }
