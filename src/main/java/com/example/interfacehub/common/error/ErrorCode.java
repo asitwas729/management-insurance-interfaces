@@ -9,6 +9,8 @@ public enum ErrorCode {
     DUPLICATE_INTERFACE_CODE(HttpStatus.CONFLICT, "Interface code already exists"),
     DUPLICATE_REQUEST(HttpStatus.CONFLICT, "Duplicate request"),
     EXECUTION_NOT_FOUND(HttpStatus.NOT_FOUND, "Execution not found"),
+    EXECUTION_CANCELLED(HttpStatus.CONFLICT, "Execution cancelled by operator"),
+    INTERFACE_PAUSED(HttpStatus.CONFLICT, "Interface is paused"),
     RETRY_TASK_NOT_FOUND(HttpStatus.NOT_FOUND, "Retry task not found"),
     RETRY_NOT_APPROVED(HttpStatus.BAD_REQUEST, "Retry task is not approved"),
     RETRY_INVALID_STATUS(HttpStatus.BAD_REQUEST, "Retry task has invalid status"),
@@ -17,6 +19,7 @@ public enum ErrorCode {
     NOT_IMPLEMENTED(HttpStatus.NOT_IMPLEMENTED, "Protocol adapter not yet implemented"),
     REST_CALL_FAILED(HttpStatus.BAD_GATEWAY, "REST call failed"),
     SOAP_CALL_FAILED(HttpStatus.BAD_GATEWAY, "SOAP call failed"),
+    SOAP_FAULT(HttpStatus.BAD_GATEWAY, "SOAP fault returned"),
     BATCH_FAILED(HttpStatus.BAD_GATEWAY, "Batch execution failed"),
     SFTP_TRANSFER_FAILED(HttpStatus.BAD_GATEWAY, "SFTP transfer failed"),
     EXT_4XX(HttpStatus.BAD_GATEWAY, "External agency returned 4xx"),
@@ -34,6 +37,7 @@ public enum ErrorCode {
     BULKHEAD_FULL(HttpStatus.SERVICE_UNAVAILABLE, "Bulkhead is full"),
     TIMEOUT(HttpStatus.GATEWAY_TIMEOUT, "External call timed out"),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "Unauthorized"),
+    USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "Username already exists"),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "Invalid request"),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error");
 
