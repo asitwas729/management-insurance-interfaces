@@ -1,0 +1,13 @@
+spring:
+  flyway:
+    enabled: true
+
+interfacehub:
+  seed:
+    enabled: true
+    days: 90
+    execution-count: 20000
+    random-seed: 42
+  security:
+    # Demo/dev only: allow anyone to self-register via POST /api/v1/auth/register
+    self-signup-enabled: true
