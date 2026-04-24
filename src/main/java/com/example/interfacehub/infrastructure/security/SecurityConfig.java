@@ -20,13 +20,16 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final boolean openEndpointsForTest;
+    private final boolean selfSignupEnabled;
 
     public SecurityConfig(
         JwtAuthenticationFilter jwtAuthenticationFilter,
-        @Value("${interfacehub.security.open-endpoints-for-test:false}") boolean openEndpointsForTest
+        @Value("${interfacehub.security.open-endpoints-for-test:false}") boolean openEndpointsForTest,
+        @Value("${interfacehub.security.self-signup-enabled:false}") boolean selfSignupEnabled
     ) {
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.openEndpointsForTest = openEndpointsForTest;
+        this.selfSignupEnabled = selfSignupEnabled;
     }
 
     @Bean
@@ -45,18 +48,34 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, "/api/v1/retries/*/approve").hasAnyRole("APPROVER", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/retries/*/reject").hasAnyRole("APPROVER", "ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/retries/*/execute").hasAnyRole("APPROVER", "ADMIN")
+                        .requestMatchers("/api/v1/policies/**").permitAll()
+                        .requestMatchers("/api/v1/interfaces/*/policy-bindings").permitAll()
                         .anyRequest().permitAll();
                     return;
                 }
                 auth
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/refresh").permitAll()
+                ;
+
+                if (selfSignupEnabled) {
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/auth/register").permitAll();
+                } else {
+                    auth.requestMatchers(HttpMethod.POST, "/api/v1/auth/register").hasRole("ADMIN");
+                }
+
+                auth
                 .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                 .requestMatchers("/", "/index.html", "/app.css", "/app.js").permitAll()
                 .requestMatchers("/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                 .requestMatchers("/h2-console/**").permitAll()
                 .requestMatchers("/actuator/health", "/actuator/prometheus", "/actuator/metrics/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/audit-logs/**").hasAnyRole("APPROVER", "ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/v1/policies/**").hasAnyRole("APPROVER", "ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/v1/policies/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.PATCH, "/api/v1/policies/**").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.POST, "/api/v1/interfaces/*/policy-bindings").hasRole("ADMIN")
+                .requestMatchers(HttpMethod.GET, "/api/v1/interfaces/*/policy-bindings").hasAnyRole("APPROVER", "ADMIN")
                 .requestMatchers(HttpMethod.GET, "/api/v1/standards/**").hasAnyRole("APPROVER", "ADMIN")
                 .requestMatchers(HttpMethod.POST, "/api/v1/standards/**").hasAnyRole("APPROVER", "ADMIN")
                 .requestMatchers(HttpMethod.PUT, "/api/v1/standards/**").hasAnyRole("APPROVER", "ADMIN")
