@@ -1,9 +1,13 @@
 package com.example.interfacehub.application.dashboard;
 
+import com.example.interfacehub.domain.execution.ExecutionStatus;
+import com.example.interfacehub.infrastructure.persistence.ExecutionHistoryRepository;
+import com.example.interfacehub.infrastructure.persistence.ExecutionHistoryRepository.InterfaceStatProjection;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -11,11 +15,14 @@ import org.springframework.stereotype.Service;
 public class DashboardSummaryService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final ExecutionHistoryRepository executionHistoryRepository;
 
-    public DashboardSummaryService(JdbcTemplate jdbcTemplate) {
+    public DashboardSummaryService(JdbcTemplate jdbcTemplate, ExecutionHistoryRepository executionHistoryRepository) {
         this.jdbcTemplate = jdbcTemplate;
+        this.executionHistoryRepository = executionHistoryRepository;
     }
 
+    @Cacheable(cacheNames = "dashboard", key = "'summary:' + #windowHours")
     public DashboardSummary summary(int windowHours) {
         int safeHours = Math.max(1, Math.min(windowHours, 24 * 30));
         LocalDateTime now = LocalDateTime.now();
@@ -69,6 +76,68 @@ public class DashboardSummaryService {
         );
     }
 
+    @Cacheable(cacheNames = "dashboard", key = "'interface-stats:' + #windowHours")
+    public List<InterfaceStat> interfaceStats(int windowHours) {
+        int safeHours = Math.max(1, Math.min(windowHours, 24 * 30));
+        LocalDateTime since = LocalDateTime.now().minusHours(safeHours);
+
+        List<InterfaceStatProjection> projections =
+            executionHistoryRepository.findInterfaceStatsSince(since, ExecutionStatus.SUCCESS);
+        Map<String, Long> slaBreachByCode = querySlaBreach(since);
+
+        return projections.stream()
+            .map(p -> {
+                Long total = p.getTotal();
+                Long successCount = p.getSuccessCount();
+                double successRate = (total == null || total <= 0)
+                    ? 0.0
+                    : (successCount == null ? 0.0 : (double) successCount / (double) total);
+
+                Double avgLatency = p.getAvgLatency();
+                return new InterfaceStat(
+                    p.getInterfaceCode(),
+                    successRate,
+                    avgLatency == null ? 0.0 : avgLatency,
+                    slaBreachByCode.getOrDefault(p.getInterfaceCode(), 0L),
+                    p.getLastExecutedAt()
+                );
+            })
+            .toList();
+    }
+
+    @Cacheable(cacheNames = "dashboard", key = "'sla-breaches:' + #windowHours")
+    public List<SlaBreachStat> slaBreaches(int windowHours) {
+        int safeHours = Math.max(1, Math.min(windowHours, 24 * 30));
+        LocalDateTime since = LocalDateTime.now().minusHours(safeHours);
+
+        String sql = """
+            select
+              d.interface_code,
+              d.sla_millis,
+              count(*) as breach_count,
+              avg(e.latency_millis) as avg_latency_ms
+            from execution_history e
+            join interface_definition d on d.interface_code = e.interface_code
+            where e.started_at >= ?
+              and d.sla_millis is not null
+              and e.latency_millis is not null
+              and e.latency_millis > d.sla_millis
+            group by d.interface_code, d.sla_millis
+            order by breach_count desc
+            """;
+
+        List<SlaBreachStat> list = new ArrayList<>();
+        jdbcTemplate.query(sql, rs -> {
+            list.add(new SlaBreachStat(
+                rs.getString("interface_code"),
+                rs.getLong("sla_millis"),
+                rs.getLong("breach_count"),
+                rs.getDouble("avg_latency_ms")
+            ));
+        }, since);
+        return list;
+    }
+
     private long queryLong(String sql, Object... args) {
         Long value = jdbcTemplate.queryForObject(sql, Long.class, args);
         return value == null ? 0L : value;
@@ -107,6 +176,23 @@ public class DashboardSummaryService {
             list.add(new TopFailureInterface(interfaceCode, total, failed, timeout, cancelled));
         }, fromAt);
         return list;
+    }
+
+    private Map<String, Long> querySlaBreach(LocalDateTime since) {
+        Map<String, Long> map = new java.util.LinkedHashMap<>();
+        jdbcTemplate.query("""
+            select e.interface_code, count(*) as cnt
+            from execution_history e
+            join interface_definition d on d.interface_code = e.interface_code
+            where e.started_at >= ?
+              and d.sla_millis is not null
+              and e.latency_millis is not null
+              and e.latency_millis > d.sla_millis
+            group by e.interface_code
+            """, rs -> {
+            map.put(rs.getString("interface_code"), rs.getLong("cnt"));
+        }, since);
+        return map;
     }
 
     public record DashboardSummary(
@@ -163,5 +249,22 @@ public class DashboardSummaryService {
             }
             return (double) failures() / (double) total;
         }
+    }
+
+    public record InterfaceStat(
+        String interfaceCode,
+        double successRate,
+        double avgLatencyMs,
+        long slaBreachCount,
+        LocalDateTime lastExecutedAt
+    ) {
+    }
+
+    public record SlaBreachStat(
+        String interfaceCode,
+        long slaMillis,
+        long slaBreachCount,
+        double avgLatencyMs
+    ) {
     }
 }
