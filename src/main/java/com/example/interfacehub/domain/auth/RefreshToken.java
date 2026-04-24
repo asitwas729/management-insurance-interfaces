@@ -29,6 +29,9 @@ public class RefreshToken {
     @Column(nullable = false)
     private boolean revoked = false;
 
+    @Column
+    private LocalDateTime revokedAt;
+
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -50,6 +53,7 @@ public class RefreshToken {
 
     public void revoke() {
         this.revoked = true;
+        this.revokedAt = LocalDateTime.now();
     }
 
     public Long getId() { return id; }
@@ -57,5 +61,6 @@ public class RefreshToken {
     public String getToken() { return token; }
     public LocalDateTime getExpiresAt() { return expiresAt; }
     public boolean isRevoked() { return revoked; }
+    public LocalDateTime getRevokedAt() { return revokedAt; }
     public LocalDateTime getCreatedAt() { return createdAt; }
 }

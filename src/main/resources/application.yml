@@ -134,4 +134,7 @@ interfacehub:
   retention:
     execution-history-days: ${RETENTION_EXECUTION_DAYS:90}
     audit-log-days: ${RETENTION_AUDIT_DAYS:365}
+    archive-retention-days: ${RETENTION_ARCHIVE_DAYS:730}
+    revoked-refresh-token-retention-days: ${RETENTION_REVOKED_REFRESH_DAYS:7}
+    purge-chunk-size: ${RETENTION_PURGE_CHUNK_SIZE:1000}
     archive-enabled: ${RETENTION_ARCHIVE_ENABLED:true}
