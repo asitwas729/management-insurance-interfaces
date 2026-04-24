@@ -8,6 +8,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.example.interfacehub.application.notification.NotificationService;
+import com.example.interfacehub.application.policy.PolicyEnforcementService;
+import com.example.interfacehub.application.policy.PolicyExecutionContext;
+import com.example.interfacehub.application.policy.ResolvedPolicy;
 import com.example.interfacehub.application.registry.InterfaceRegistryService;
 import com.example.interfacehub.application.standard.StandardContractService;
 import com.example.interfacehub.common.security.SensitiveDataMasker;
@@ -44,6 +47,9 @@ class SlaMonitoringTest {
     @Mock
     private NotificationService notificationService;
 
+    @Mock
+    private PolicyEnforcementService policyEnforcementService;
+
     private SimpleMeterRegistry meterRegistry;
     private ExecutionOrchestrator orchestrator;
 
@@ -58,7 +64,8 @@ class SlaMonitoringTest {
             new SensitiveDataMasker(new ObjectMapper()),
             meterRegistry,
             standardContractService,
-            notificationService
+            notificationService,
+            policyEnforcementService
         );
     }
 
@@ -92,8 +99,16 @@ class SlaMonitoringTest {
             .thenReturn(running);
         when(executionPersistenceService.markSuccess(any(), any(), anyLong())).thenReturn(finished);
         when(executorRouter.routeAndExecute(any())).thenReturn(ExecutionResult.success("{\"ok\":true}", 120L));
+        when(policyEnforcementService.resolveAndSnapshot(any(), eq(definition), eq(3000L), any()))
+            .thenReturn(new ResolvedPolicy("DEFAULT", 3000L, 0, 0L, true, true));
 
-        orchestrator.executeByTrigger("SLA_IF", "IDEMP-1", Map.of("policyNo", "P1"), TriggerType.MANUAL);
+        orchestrator.executeByTrigger(
+            "SLA_IF",
+            "IDEMP-1",
+            Map.<String, Object>of("policyNo", "P1"),
+            TriggerType.MANUAL,
+            PolicyExecutionContext.system("FSS")
+        );
 
         assertThat(meterRegistry.counter("execution.sla_breach", "interfaceCode", "SLA_IF").count()).isEqualTo(1.0);
         verify(notificationService).sendSlaBreachAlert("SLA_IF", 120L, 50L);

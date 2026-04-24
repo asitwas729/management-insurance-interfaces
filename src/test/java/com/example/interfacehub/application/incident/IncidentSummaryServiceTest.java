@@ -9,6 +9,7 @@ import com.example.interfacehub.domain.execution.ExecutionStatus;
 import com.example.interfacehub.domain.execution.TriggerType;
 import com.example.interfacehub.domain.interfaceconfig.ProtocolType;
 import com.example.interfacehub.infrastructure.persistence.ExecutionHistoryRepository;
+import com.example.interfacehub.infrastructure.persistence.IncidentSummaryRepository;
 import com.example.interfacehub.presentation.IncidentSummaryResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDateTime;
@@ -35,6 +36,9 @@ class IncidentSummaryServiceTest {
     private ExecutionHistoryRepository repository;
 
     @Mock
+    private IncidentSummaryRepository summaryRepository;
+
+    @Mock
     private ApplicationContext applicationContext;
 
     @Mock
@@ -51,6 +55,7 @@ class IncidentSummaryServiceTest {
         properties = new LlmProperties();
         service = new IncidentSummaryService(
             repository,
+            summaryRepository,
             properties,
             new ObjectMapper(),
             applicationContext,

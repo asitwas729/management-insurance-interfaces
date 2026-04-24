@@ -127,6 +127,142 @@ class InterfaceMvpIntegrationTest {
     }
 
     @Test
+    void config_version_compare_should_return_changed_fields() throws Exception {
+        registerInterfaceWithProtocol("COMPARE_IF", "REST").andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/interfaces/COMPARE_IF/configs")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "endpoint": "http://localhost:18080/v1/report",
+                      "authType": "API_KEY",
+                      "headers": {"x-api-key":"abc"},
+                      "timeoutMillis": 2000,
+                      "environment": "DEV",
+                      "protocolConfig": {"method":"POST"},
+                      "requestSample": "{\\"policyNo\\":\\"P-001\\"}",
+                      "responseSample": "{\\"result\\":\\"OK\\"}"
+                    }
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.version").value(1));
+
+        mockMvc.perform(post("/api/v1/interfaces/COMPARE_IF/configs")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "endpoint": "http://localhost:18080/v2/report",
+                      "authType": "JWT",
+                      "headers": {"Authorization":"Bearer token"},
+                      "timeoutMillis": 3000,
+                      "environment": "PROD",
+                      "protocolConfig": {"method":"POST","timeoutProfile":"strict"},
+                      "requestSample": "{\\"policyNo\\":\\"P-002\\"}",
+                      "responseSample": "{\\"result\\":\\"OK\\"}"
+                    }
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.version").value(2));
+
+        mockMvc.perform(get("/api/v1/interfaces/COMPARE_IF/configs/compare")
+                .param("leftVersion", "1")
+                .param("rightVersion", "2"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.left.version").value(1))
+            .andExpect(jsonPath("$.right.version").value(2))
+            .andExpect(jsonPath("$.diffs.length()").value(greaterThanOrEqualTo(1)));
+    }
+
+    @Test
+    void policy_enforcement_should_apply_auth_partner_and_rate_limit_per_interface() throws Exception {
+        registerInterfaceWithProtocol("POLICY_IF", "REST").andExpect(status().isCreated());
+        Long configId = createConfigAndGetId("POLICY_IF", externalEndpoint);
+        mockMvc.perform(post("/api/v1/interfaces/POLICY_IF/configs/{configId}/publish", configId))
+            .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/v1/policies/templates")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "policyName":"PARTNER_STRICT",
+                      "authType":"API_KEY",
+                      "timeoutMillis":3000,
+                      "retryMaxAttempts":0,
+                      "retryIntervalMillis":0,
+                      "rateLimitPerMinute":1,
+                      "allowedPartnerIds":["FSS"],
+                      "allowedRoles":[],
+                      "maskRequestPayload":true,
+                      "maskResponsePayload":true
+                    }
+                    """))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/interfaces/POLICY_IF/policy-bindings")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "policyName":"PARTNER_STRICT",
+                      "priority":100
+                    }
+                    """))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/interfaces/POLICY_IF/execute")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "idempotencyKey":"POLICY-BLOCK-1",
+                      "partnerId":"CARD",
+                      "apiKey":"abc",
+                      "payload":{"policyNo":"P202604220500"}
+                    }
+                    """))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value("FORBIDDEN_ROLE"));
+
+        mockMvc.perform(post("/api/v1/interfaces/POLICY_IF/execute")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "idempotencyKey":"POLICY-BLOCK-2",
+                      "partnerId":"FSS",
+                      "payload":{"policyNo":"P202604220501"}
+                    }
+                    """))
+            .andExpect(status().isUnauthorized())
+            .andExpect(jsonPath("$.code").value("UNAUTHORIZED"));
+
+        mockMvc.perform(post("/api/v1/interfaces/POLICY_IF/execute")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "idempotencyKey":"POLICY-OK-1",
+                      "partnerId":"FSS",
+                      "clientId":"fss-client-1",
+                      "apiKey":"abc",
+                      "payload":{"policyNo":"P202604220502"}
+                    }
+                    """))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("SUCCESS"));
+
+        mockMvc.perform(post("/api/v1/interfaces/POLICY_IF/execute")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "idempotencyKey":"POLICY-RATE-2",
+                      "partnerId":"FSS",
+                      "clientId":"fss-client-1",
+                      "apiKey":"abc",
+                      "payload":{"policyNo":"P202604220503"}
+                    }
+                    """))
+            .andExpect(status().isTooManyRequests())
+            .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+    }
+
+    @Test
     void execute_fails_when_published_config_does_not_exist() throws Exception {
         registerInterface("NO_CONFIG_IF").andExpect(status().isCreated());
 
