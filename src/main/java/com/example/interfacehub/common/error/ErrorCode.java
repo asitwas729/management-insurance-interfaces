@@ -36,6 +36,8 @@ public enum ErrorCode {
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Too many requests"),
     BULKHEAD_FULL(HttpStatus.SERVICE_UNAVAILABLE, "Bulkhead is full"),
     TIMEOUT(HttpStatus.GATEWAY_TIMEOUT, "External call timed out"),
+    STANDARD_VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "Standard message validation failed"),
+    FIXED_LENGTH_VALIDATION_FAILED(HttpStatus.BAD_REQUEST, "Fixed-length message validation failed"),
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "Unauthorized"),
     USERNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "Username already exists"),
     INVALID_REQUEST(HttpStatus.BAD_REQUEST, "Invalid request"),

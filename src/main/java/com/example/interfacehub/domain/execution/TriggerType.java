@@ -4,5 +4,6 @@ public enum TriggerType {
     MANUAL,
     SCHEDULED,
     RETRY,
-    SANDBOX
+    SANDBOX,
+    MQ_INBOUND
 }

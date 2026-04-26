@@ -16,6 +16,7 @@ public final class AuditAction {
     public static final String CHANGE_STATUS = "CHANGE_STATUS";
     
     // Execution & Retry Actions
+    public static final String MANUAL_EXECUTION = "MANUAL_EXECUTION";
     public static final String REPROCESSED = "REPROCESSED";
     public static final String REPLAY_DLQ = "REPLAY_DLQ";
     public static final String APPROVE = "APPROVE";
@@ -23,4 +24,6 @@ public final class AuditAction {
 
     // System Actions
     public static final String DATA_RETENTION_EXECUTED = "DATA_RETENTION_EXECUTED";
+    public static final String CONFIG_EXPORTED = "CONFIG_EXPORTED";
+    public static final String CONFIG_IMPORTED = "CONFIG_IMPORTED";
 }

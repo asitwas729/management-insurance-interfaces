@@ -9,6 +9,8 @@ public record ExecutionContext(
     String endpoint,
     MultiValueMap<String, String> headers,
     String payload,
-    long timeoutMillis
+    long timeoutMillis,
+    String protocolConfigJson,
+    Integer interfaceConfigVersion
 ) {
 }
