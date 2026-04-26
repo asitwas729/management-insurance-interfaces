@@ -157,10 +157,3 @@ Content-Type: application/json
 POST /api/v1/retries/{retryTaskId}/execute
 ```
 
-## 다음 단계
-
-1. Resilience4j 기반 timeout/retry/circuit breaker 적용
-2. Idempotency Key 기반 중복 실행 방지
-3. AuditLog 추가
-4. 재처리 요청/승인 흐름 추가
-5. PostgreSQL + Flyway 전환
