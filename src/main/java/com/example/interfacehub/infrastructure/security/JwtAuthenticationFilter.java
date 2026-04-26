@@ -8,16 +8,21 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
+
+    private static final Logger log = LoggerFactory.getLogger(JwtAuthenticationFilter.class);
 
     private final JwtTokenProvider jwtTokenProvider;
     private final AppUserDetailsService appUserDetailsService;
@@ -50,15 +55,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             if (isValid && !isBlacklisted) {
                 if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                    String username = jwtTokenProvider.extractUsername(token);
-                    UserDetails userDetails = appUserDetailsService.loadUserByUsername(username);
-                    UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
-                        userDetails,
-                        null,
-                        userDetails.getAuthorities()
-                    );
-                    authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(authentication);
+                    try {
+                        String username = jwtTokenProvider.extractUsername(token);
+                        UserDetails userDetails = appUserDetailsService.loadUserByUsername(username);
+                        UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
+                            userDetails,
+                            null,
+                            userDetails.getAuthorities()
+                        );
+                        authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                        SecurityContextHolder.getContext().setAuthentication(authentication);
+                    } catch (UsernameNotFoundException e) {
+                        // 토큰은 유효하지만 해당 사용자가 DB에 존재하지 않음 (서버 재시작 등으로 인한 세션 무효화)
+                        // 인증 없이 진행 → Spring Security 권한 체크에서 401 처리
+                        log.debug("JWT token valid but user not found: {}", e.getMessage());
+                    }
                 }
             } else {
                 String reason = isBlacklisted ? "Token is blacklisted" : "Invalid token signature or expired";
