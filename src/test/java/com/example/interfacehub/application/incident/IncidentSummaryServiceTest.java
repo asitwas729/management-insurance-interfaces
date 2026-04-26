@@ -109,11 +109,12 @@ class IncidentSummaryServiceTest {
         ExecutionHistory history = ExecutionHistory.start(
             "EXEC-1",
             "MQ_IF",
+            "MQ Interface",
             ProtocolType.MQ,
             TriggerType.MANUAL,
             "{}"
         );
-        history.markFailed("MQ_CONSUME_FAILED", "temporary broker failure", 1200L);
+        history.markFailed("MQ_CONSUME_FAILED", "NETWORK", "temporary broker failure", 1200L);
         return history;
     }
 

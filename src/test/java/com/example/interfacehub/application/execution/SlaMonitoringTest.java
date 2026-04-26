@@ -50,6 +50,12 @@ class SlaMonitoringTest {
     @Mock
     private PolicyEnforcementService policyEnforcementService;
 
+    @Mock
+    private ExecutionEventPublisher executionEventPublisher;
+
+    @Mock
+    private ExecutionStepLoggingService stepLoggingService;
+
     private SimpleMeterRegistry meterRegistry;
     private ExecutionOrchestrator orchestrator;
 
@@ -65,7 +71,9 @@ class SlaMonitoringTest {
             meterRegistry,
             standardContractService,
             notificationService,
-            policyEnforcementService
+            policyEnforcementService,
+            executionEventPublisher,
+            stepLoggingService
         );
     }
 
@@ -88,14 +96,14 @@ class SlaMonitoringTest {
             3000L
         );
         config.publish();
-        ExecutionHistory running = ExecutionHistory.start("EXEC-1", "SLA_IF", ProtocolType.REST, TriggerType.MANUAL, "{}");
-        ExecutionHistory finished = ExecutionHistory.start("EXEC-1", "SLA_IF", ProtocolType.REST, TriggerType.MANUAL, "{}");
+        ExecutionHistory running = ExecutionHistory.start("EXEC-1", "SLA_IF", "SLA interface", ProtocolType.REST, TriggerType.MANUAL, "{}");
+        ExecutionHistory finished = ExecutionHistory.start("EXEC-1", "SLA_IF", "SLA interface", ProtocolType.REST, TriggerType.MANUAL, "{}");
         finished.markSuccess("{\"ok\":true}", 120L);
 
         when(interfaceRegistryService.findByCode("SLA_IF")).thenReturn(definition);
         when(interfaceRegistryService.findPublishedConfig(definition)).thenReturn(config);
         when(standardContractService.isMaintenanceWindowActive(eq("FSS"), any())).thenReturn(false);
-        when(executionPersistenceService.createRunningHistory(any(), eq("SLA_IF"), eq(ProtocolType.REST), eq(TriggerType.MANUAL), any()))
+        when(executionPersistenceService.createRunningHistory(any(), eq("SLA_IF"), any(), eq(ProtocolType.REST), eq(TriggerType.MANUAL), any()))
             .thenReturn(running);
         when(executionPersistenceService.markSuccess(any(), any(), anyLong())).thenReturn(finished);
         when(executorRouter.routeAndExecute(any())).thenReturn(ExecutionResult.success("{\"ok\":true}", 120L));

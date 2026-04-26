@@ -22,9 +22,11 @@ class ExecutorRouterTest {
             "TEST_IF",
             ProtocolType.REST,
             "http://localhost",
-            new LinkedMultiValueMap<>(),
+            new LinkedMultiValueMap<String, String>(),
             "{}",
-            1000L
+            1000L,
+            "{}",
+            1
         ));
 
         assertThat(result.success()).isTrue();
