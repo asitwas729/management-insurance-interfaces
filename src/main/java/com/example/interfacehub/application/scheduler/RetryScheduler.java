@@ -10,9 +10,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import lombok.RequiredArgsConstructor;
 
+//@Component
+//@ConditionalOnProperty(name = "interfacehub.scheduler.enabled", havingValue = "true", matchIfMissing = true)
 @Component
-@ConditionalOnProperty(name = "interfacehub.scheduler.enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(
+        name = "interfacehub.scheduler.retry.enabled",
+        havingValue = "true",
+        matchIfMissing = false
+)
 public class RetryScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(RetryScheduler.class);
@@ -23,7 +30,7 @@ public class RetryScheduler {
         this.retryTaskService = retryTaskService;
     }
 
-    @Scheduled(fixedDelayString = "#{${interfacehub.scheduler.retry-fixed-delay-seconds:60} * 1000}")
+    //@Scheduled(fixedDelayString = "#{${interfacehub.scheduler.retry-fixed-delay-seconds:60} * 1000}")
     public void executeApprovedRetries() {
         List<RetryTask> approved = retryTaskService.findByStatus(RetryStatus.APPROVED);
         if (approved.isEmpty()) {

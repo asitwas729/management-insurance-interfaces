@@ -138,11 +138,17 @@ public class RetryTaskService {
         Map<String, Object> payload = toPayloadMap(original.getRequestPayload());
         String idempotencyKey = "RETRY-" + retryTask.getId() + "-" + System.currentTimeMillis();
 
-        ExecutionHistory retried = executionOrchestrator.executeRetry(
-            retryTask.getInterfaceDefinition().getInterfaceCode(),
-            idempotencyKey,
-            payload
-        );
+        ExecutionHistory retried;
+        try {
+            retried = executionOrchestrator.executeRetry(
+                retryTask.getInterfaceDefinition().getInterfaceCode(),
+                idempotencyKey,
+                payload
+            );
+        } catch (Exception exception) {
+            transactionTemplate.executeWithoutResult(status -> finalizeRetryStatusAndAudit(retryTaskId, ExecutionStatus.FAILED));
+            throw exception;
+        }
 
         transactionTemplate.executeWithoutResult(status -> finalizeRetryStatusAndAudit(retryTaskId, retried.getStatus()));
         return retried;
