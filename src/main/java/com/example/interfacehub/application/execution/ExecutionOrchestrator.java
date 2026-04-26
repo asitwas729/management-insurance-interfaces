@@ -1,5 +1,6 @@
 package com.example.interfacehub.application.execution;
 
+import com.example.interfacehub.application.audit.AuditLogService;
 import com.example.interfacehub.application.notification.NotificationService;
 import com.example.interfacehub.application.policy.PolicyEnforcementService;
 import com.example.interfacehub.application.policy.PolicyExecutionContext;
@@ -9,6 +10,7 @@ import com.example.interfacehub.application.standard.StandardContractService;
 import com.example.interfacehub.common.error.BusinessException;
 import com.example.interfacehub.common.error.ErrorCode;
 import com.example.interfacehub.common.security.SensitiveDataMasker;
+import com.example.interfacehub.domain.audit.AuditAction;
 import com.example.interfacehub.domain.execution.ExecutionContext;
 import com.example.interfacehub.domain.execution.ExecutionHistory;
 import com.example.interfacehub.domain.execution.ExecutionResult;
@@ -51,7 +53,9 @@ public class ExecutionOrchestrator {
     private final StandardContractService standardContractService;
     private final NotificationService notificationService;
     private final PolicyEnforcementService policyEnforcementService;
-    private final Tracer tracer; // Inject Tracer
+    private final ExecutionEventPublisher executionEventPublisher;
+    private final ExecutionStepLoggingService stepLoggingService;
+    private final Tracer tracer;
 
     @Autowired
     public ExecutionOrchestrator(
@@ -64,7 +68,9 @@ public class ExecutionOrchestrator {
         StandardContractService standardContractService,
         NotificationService notificationService,
         PolicyEnforcementService policyEnforcementService,
-        Tracer tracer // Add Tracer to constructor
+        ExecutionEventPublisher executionEventPublisher,
+        ExecutionStepLoggingService stepLoggingService,
+        Tracer tracer
     ) {
         this.interfaceRegistryService = interfaceRegistryService;
         this.executorRouter = executorRouter;
@@ -75,7 +81,9 @@ public class ExecutionOrchestrator {
         this.standardContractService = standardContractService;
         this.notificationService = notificationService;
         this.policyEnforcementService = policyEnforcementService;
-        this.tracer = tracer; // Assign Tracer
+        this.executionEventPublisher = executionEventPublisher;
+        this.stepLoggingService = stepLoggingService;
+        this.tracer = tracer;
     }
 
     public ExecutionOrchestrator(
@@ -87,7 +95,9 @@ public class ExecutionOrchestrator {
         MeterRegistry meterRegistry,
         StandardContractService standardContractService,
         NotificationService notificationService,
-        PolicyEnforcementService policyEnforcementService
+        PolicyEnforcementService policyEnforcementService,
+        ExecutionEventPublisher executionEventPublisher,
+        ExecutionStepLoggingService stepLoggingService
     ) {
         this(
             interfaceRegistryService,
@@ -99,6 +109,8 @@ public class ExecutionOrchestrator {
             standardContractService,
             notificationService,
             policyEnforcementService,
+            executionEventPublisher,
+            stepLoggingService,
             GlobalOpenTelemetry.getTracer("com.example.interfacehub.execution")
         );
     }
@@ -157,9 +169,15 @@ public class ExecutionOrchestrator {
         ExecutionHistory runningHistory = executionPersistenceService.createRunningHistory(
             executionId,
             definition.getInterfaceCode(),
+            definition.getName(),
             definition.getProtocolType(),
             effectiveTriggerType,
             requestPayloadForLog
+        );
+        runningHistory.setSystems(
+            definition.getCallDirection() == com.example.interfacehub.domain.interfaceconfig.CallDirection.INBOUND ? definition.getExternalOrg() : "INTERNAL",
+            definition.getCallDirection() == com.example.interfacehub.domain.interfaceconfig.CallDirection.OUTBOUND ? definition.getExternalOrg() : "INTERNAL",
+            definition.getExternalOrg()
         );
 
         boolean inMaintenanceWindow = standardContractService.isMaintenanceWindowActive(
@@ -170,12 +188,14 @@ public class ExecutionOrchestrator {
             ExecutionHistory suppressed = executionPersistenceService.markFailed(
                 runningHistory.getId(),
                 ErrorCode.EXT_MAINTENANCE.name(),
+                getErrorCategory(ErrorCode.EXT_MAINTENANCE.name()),
                 maskForResponsePolicy(
                     "Execution suppressed due to maintenance window of external org: " + definition.getExternalOrg(),
                     policy
                 ),
                 0L
             );
+            executionEventPublisher.publish(suppressed);
             recordMetrics(interfaceCode, false, 0L, true);
             return suppressed;
         }
@@ -186,6 +206,7 @@ public class ExecutionOrchestrator {
                 maskForResponsePolicy(config.getMockResponseBody(), policy),
                 0L
             );
+            executionEventPublisher.publish(finished);
             recordMetrics(interfaceCode, true, 0L, false);
             return finished;
         }
@@ -196,17 +217,23 @@ public class ExecutionOrchestrator {
             config.getEndpoint(),
             toHeaders(config.getHeadersJson(), interfaceCode),
             requestPayloadRaw,
-            policy.timeoutMillis()
+            policy.timeoutMillis(),
+            config.getProtocolConfigJson(),
+            config.getVersion()
         );
 
         try {
-            ExecutionResult result = executeWithRetry(context, policy);
+            ExecutionResultWithAttempts resultWithAttempts = executeWithRetry(context, policy);
+            ExecutionResult result = resultWithAttempts.result();
+            runningHistory.setRetryCount(resultWithAttempts.attempts());
+
             if (result.success()) {
                 ExecutionHistory finished = executionPersistenceService.markSuccess(
                     runningHistory.getId(),
                     maskForResponsePolicy(result.responsePayload(), policy),
                     result.latencyMillis()
                 );
+                executionEventPublisher.publish(finished);
                 recordMetrics(interfaceCode, true, result.latencyMillis(), false);
                 checkSla(definition, result.latencyMillis());
                 return finished;
@@ -214,55 +241,83 @@ public class ExecutionOrchestrator {
             ExecutionHistory failed = executionPersistenceService.markFailed(
                 runningHistory.getId(),
                 result.errorCode(),
+                getErrorCategory(result.errorCode()),
                 maskForResponsePolicy(result.errorMessage(), policy),
                 result.latencyMillis()
             );
+            executionEventPublisher.publish(failed);
             recordMetrics(interfaceCode, false, result.latencyMillis(), false);
             return failed;
         } catch (BusinessException exception) {
-            executionPersistenceService.markFailed(
+            ExecutionHistory failed = executionPersistenceService.markFailed(
                 runningHistory.getId(),
                 exception.getErrorCode().name(),
+                getErrorCategory(exception.getErrorCode().name()),
                 maskForResponsePolicy(exception.getMessage(), policy),
                 0L
             );
+            executionEventPublisher.publish(failed);
             recordMetrics(interfaceCode, false, 0L, false);
             throw exception;
         } catch (RuntimeException exception) {
-            executionPersistenceService.markFailed(
+            ExecutionHistory failed = executionPersistenceService.markFailed(
                 runningHistory.getId(),
                 ErrorCode.INTERNAL_ERROR.name(),
+                getErrorCategory(ErrorCode.INTERNAL_ERROR.name()),
                 maskForResponsePolicy(exception.getMessage(), policy),
                 0L
             );
+            executionEventPublisher.publish(failed);
             recordMetrics(interfaceCode, false, 0L, false);
             throw exception;
         }
     }
 
-    private ExecutionResult executeWithRetry(ExecutionContext context, ResolvedPolicy policy) {
+    private record ExecutionResultWithAttempts(ExecutionResult result, int attempts) {}
+
+    private ExecutionResultWithAttempts executeWithRetry(ExecutionContext context, ResolvedPolicy policy) {
         ExecutionResult lastResult = null;
+        int attempts = 0;
         for (int attempt = 0; attempt <= policy.retryMaxAttempts(); attempt++) {
+            attempts = attempt;
             ExecutionResult result = executorRouter.routeAndExecute(context);
             lastResult = result;
             if (result.success()) {
-                return result;
+                return new ExecutionResultWithAttempts(result, attempts);
             }
             if (!isRetryableError(result.errorCode()) || attempt == policy.retryMaxAttempts()) {
-                return result;
+                return new ExecutionResultWithAttempts(result, attempts);
             }
             if (policy.retryIntervalMillis() > 0) {
                 try {
                     Thread.sleep(policy.retryIntervalMillis());
                 } catch (InterruptedException interruptedException) {
                     Thread.currentThread().interrupt();
-                    return result;
+                    return new ExecutionResultWithAttempts(result, attempts);
                 }
             }
         }
-        return lastResult == null
-            ? ExecutionResult.failure(ErrorCode.INTERNAL_ERROR.name(), "Execution failed without result", 0L)
-            : lastResult;
+        return new ExecutionResultWithAttempts(
+            lastResult == null
+                ? ExecutionResult.failure(ErrorCode.INTERNAL_ERROR.name(), "Execution failed without result", 0L)
+                : lastResult,
+            attempts
+        );
+    }
+
+    private String getErrorCategory(String errorCode) {
+        if (errorCode == null) return "UNKNOWN";
+        com.example.interfacehub.domain.standard.ErrorCatalog catalog = standardContractService.findErrorCatalog(errorCode);
+        if (catalog != null) {
+            return catalog.getDomain();
+        }
+        // Fallback categorization logic
+        if (errorCode.contains("TIMEOUT")) return "NETWORK";
+        if (errorCode.contains("CALL_FAILED")) return "NETWORK";
+        if (errorCode.contains("AUTH") || errorCode.contains("UNAUTHORIZED") || errorCode.contains("FORBIDDEN")) return "AUTH";
+        if (errorCode.contains("VALIDATION") || errorCode.contains("INVALID_REQUEST")) return "DATA";
+        if (errorCode.contains("MAINTENANCE")) return "EXTERNAL";
+        return "SYSTEM";
     }
 
     private boolean isRetryableError(String errorCode) {
