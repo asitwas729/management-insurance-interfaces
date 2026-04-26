@@ -9,6 +9,7 @@ import com.example.interfacehub.domain.execution.ExecutionHistory;
 import com.example.interfacehub.domain.execution.ExecutionStatus;
 import com.example.interfacehub.domain.execution.TriggerType;
 import com.example.interfacehub.domain.mq.DlqMessage;
+import com.example.interfacehub.domain.mq.DlqMessageStatus;
 import com.example.interfacehub.domain.mq.DlqReplayRequest;
 import com.example.interfacehub.domain.mq.DlqReplayStatus;
 import com.example.interfacehub.infrastructure.persistence.DlqReplayRequestRepository;
@@ -57,6 +58,10 @@ public class DlqReplayService {
     @Transactional
     public DlqReplayRequest requestReplay(Long dlqId, CreateDlqReplayRequest request) {
         DlqMessage message = dlqMessageService.findById(dlqId);
+        if (message.getStatus() == DlqMessageStatus.EXHAUSTED || message.exceedsReplayLimit(policyProperties.getMaxAttempts())) {
+            message.markExhausted();
+            throw new BusinessException(ErrorCode.DLQ_REPLAY_LIMIT_EXCEEDED, "DLQ message is exhausted");
+        }
         String payloadOverrideJson = toJson(request.payloadOverride());
 
         DlqReplayRequest replayRequest = DlqReplayRequest.request(
@@ -117,7 +122,7 @@ public class DlqReplayService {
         return replayRequest;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = BusinessException.class)
     public ExecutionHistory execute(Long replayRequestId, ExecuteDlqReplayRequest request) {
         DlqReplayRequest replayRequest = findById(replayRequestId);
         if (replayRequest.getStatus() != DlqReplayStatus.APPROVED) {
@@ -125,37 +130,63 @@ public class DlqReplayService {
         }
 
         DlqMessage message = replayRequest.getDlqMessage();
-        validateReplayPolicy(message);
 
-        Map<String, Object> payload = replayRequest.getPayloadOverrideJson() == null
-            ? parsePayload(message.getPayload())
-            : parsePayload(replayRequest.getPayloadOverrideJson());
+        try {
+            validateReplayPolicy(message);
 
-        String idempotencyKey = "DLQ-REPLAY-%d-%s".formatted(message.getId(), UUID.randomUUID().toString().substring(0, 8));
-        ExecutionHistory execution = executionOrchestrator.executeByTrigger(
-            message.getInterfaceCode(),
-            idempotencyKey,
-            payload,
-            TriggerType.RETRY,
-            PolicyExecutionContext.system(null)
-        );
+            Map<String, Object> payload = replayRequest.getPayloadOverrideJson() == null
+                ? parsePayload(message.getPayload())
+                : parsePayload(replayRequest.getPayloadOverrideJson());
 
-        message.markReplayed();
-        if (execution.getStatus() == ExecutionStatus.SUCCESS) {
-            replayRequest.markExecuted();
-        } else {
-            replayRequest.markFailed();
+            String idempotencyKey = "DLQ-REPLAY-%d-%s".formatted(message.getId(), UUID.randomUUID().toString().substring(0, 8));
+            ExecutionHistory execution = executionOrchestrator.executeByTrigger(
+                message.getInterfaceCode(),
+                idempotencyKey,
+                payload,
+                TriggerType.RETRY,
+                PolicyExecutionContext.system(null)
+            );
+
+            message.markReplayed();
+            if (execution.getStatus() == ExecutionStatus.SUCCESS) {
+                replayRequest.markExecuted();
+            } else {
+                replayRequest.markFailed();
+            }
+
+            auditLogService.record(
+                request.executor(),
+                "EXECUTE_DLQ_REPLAY",
+                "DLQ_REPLAY_REQUEST",
+                String.valueOf(replayRequest.getId()),
+                "{\"status\":\"APPROVED\"}",
+                "{\"status\":\"" + replayRequest.getStatus().name() + "\"}"
+            );
+            return execution;
+        } catch (BusinessException exception) {
+            if (exception.getErrorCode() == ErrorCode.DLQ_REPLAY_COOLDOWN) {
+                throw exception;
+            }
+            if (exception.getErrorCode() == ErrorCode.DLQ_REPLAY_LIMIT_EXCEEDED) {
+                message.markExhausted();
+                replayRequest.markFailed();
+                auditLogService.record(
+                    request.executor(),
+                    "EXECUTE_DLQ_REPLAY",
+                    "DLQ_REPLAY_REQUEST",
+                    String.valueOf(replayRequest.getId()),
+                    "{\"status\":\"APPROVED\"}",
+                    "{\"status\":\"FAILED\",\"errorCode\":\"DLQ_REPLAY_LIMIT_EXCEEDED\"}"
+                );
+                throw exception;
+            }
+
+            markReplayFailed(replayRequest, message, request.executor());
+            throw exception;
+        } catch (Exception exception) {
+            markReplayFailed(replayRequest, message, request.executor());
+            throw new BusinessException(ErrorCode.MQ_CONSUME_FAILED, "DLQ replay failed: " + exception.getMessage());
         }
-
-        auditLogService.record(
-            request.executor(),
-            "EXECUTE_DLQ_REPLAY",
-            "DLQ_REPLAY_REQUEST",
-            String.valueOf(replayRequest.getId()),
-            "{\"status\":\"APPROVED\"}",
-            "{\"status\":\"" + replayRequest.getStatus().name() + "\"}"
-        );
-        return execution;
     }
 
     @Transactional(readOnly = true)
@@ -172,12 +203,31 @@ public class DlqReplayService {
     }
 
     private void validateReplayPolicy(DlqMessage message) {
+        if (message.getStatus() == DlqMessageStatus.EXHAUSTED) {
+            throw new BusinessException(ErrorCode.DLQ_REPLAY_LIMIT_EXCEEDED, "DLQ message is exhausted");
+        }
         if (message.exceedsReplayLimit(policyProperties.getMaxAttempts())) {
             throw new BusinessException(ErrorCode.DLQ_REPLAY_LIMIT_EXCEEDED);
         }
         if (message.isInCooldown(policyProperties.getCooldownSeconds())) {
             throw new BusinessException(ErrorCode.DLQ_REPLAY_COOLDOWN);
         }
+    }
+
+    private void markReplayFailed(DlqReplayRequest replayRequest, DlqMessage message, String executor) {
+        message.markReplayed();
+        if (message.exceedsReplayLimit(policyProperties.getMaxAttempts())) {
+            message.markExhausted();
+        }
+        replayRequest.markFailed();
+        auditLogService.record(
+            executor,
+            "EXECUTE_DLQ_REPLAY",
+            "DLQ_REPLAY_REQUEST",
+            String.valueOf(replayRequest.getId()),
+            "{\"status\":\"APPROVED\"}",
+            "{\"status\":\"FAILED\"}"
+        );
     }
 
     private Map<String, Object> parsePayload(String rawPayload) {
