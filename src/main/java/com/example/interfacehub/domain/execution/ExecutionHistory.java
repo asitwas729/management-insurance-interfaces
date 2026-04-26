@@ -23,6 +23,18 @@ public class ExecutionHistory {
     @Column(nullable = false, length = 100)
     private String interfaceCode;
 
+    @Column(length = 200)
+    private String interfaceName;
+
+    @Column(length = 100)
+    private String sourceSystem;
+
+    @Column(length = 100)
+    private String targetSystem;
+
+    @Column(length = 100)
+    private String partnerName;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     private ProtocolType protocolType;
@@ -42,6 +54,9 @@ public class ExecutionHistory {
 
     private Long latencyMillis;
 
+    @Column(nullable = false)
+    private int retryCount = 0;
+
     @Column(columnDefinition = "TEXT")
     private String requestPayload;
 
@@ -51,15 +66,19 @@ public class ExecutionHistory {
     @Column(length = 100)
     private String errorCode;
 
+    @Column(length = 50)
+    private String errorCategory;
+
     @Column(length = 1000)
     private String errorMessage;
 
     protected ExecutionHistory() {
     }
 
-    private ExecutionHistory(String executionId, String interfaceCode, ProtocolType protocolType, TriggerType triggerType, String requestPayload) {
+    private ExecutionHistory(String executionId, String interfaceCode, String interfaceName, ProtocolType protocolType, TriggerType triggerType, String requestPayload) {
         this.executionId = executionId;
         this.interfaceCode = interfaceCode;
+        this.interfaceName = interfaceName;
         this.protocolType = protocolType;
         this.triggerType = triggerType;
         this.status = ExecutionStatus.RUNNING;
@@ -67,8 +86,18 @@ public class ExecutionHistory {
         this.requestPayload = requestPayload;
     }
 
-    public static ExecutionHistory start(String executionId, String interfaceCode, ProtocolType protocolType, TriggerType triggerType, String requestPayload) {
-        return new ExecutionHistory(executionId, interfaceCode, protocolType, triggerType, requestPayload);
+    public static ExecutionHistory start(String executionId, String interfaceCode, String interfaceName, ProtocolType protocolType, TriggerType triggerType, String requestPayload) {
+        return new ExecutionHistory(executionId, interfaceCode, interfaceName, protocolType, triggerType, requestPayload);
+    }
+
+    public void setSystems(String sourceSystem, String targetSystem, String partnerName) {
+        this.sourceSystem = sourceSystem;
+        this.targetSystem = targetSystem;
+        this.partnerName = partnerName;
+    }
+
+    public void setRetryCount(int retryCount) {
+        this.retryCount = retryCount;
     }
 
     public void markSuccess(String responsePayload, long latencyMillis) {
@@ -78,9 +107,10 @@ public class ExecutionHistory {
         this.endedAt = LocalDateTime.now();
     }
 
-    public void markFailed(String errorCode, String errorMessage, long latencyMillis) {
+    public void markFailed(String errorCode, String errorCategory, String errorMessage, long latencyMillis) {
         this.status = ExecutionStatus.FAILED;
         this.errorCode = errorCode;
+        this.errorCategory = errorCategory;
         this.errorMessage = errorMessage;
         this.latencyMillis = latencyMillis;
         this.endedAt = LocalDateTime.now();
@@ -89,6 +119,7 @@ public class ExecutionHistory {
     public void markCancelled(String message, long latencyMillis) {
         this.status = ExecutionStatus.CANCELLED;
         this.errorCode = "EXECUTION_CANCELLED";
+        this.errorCategory = "SYSTEM";
         this.errorMessage = message;
         this.latencyMillis = latencyMillis;
         this.endedAt = LocalDateTime.now();
@@ -104,6 +135,22 @@ public class ExecutionHistory {
 
     public String getInterfaceCode() {
         return interfaceCode;
+    }
+
+    public String getInterfaceName() {
+        return interfaceName;
+    }
+
+    public String getSourceSystem() {
+        return sourceSystem;
+    }
+
+    public String getTargetSystem() {
+        return targetSystem;
+    }
+
+    public String getPartnerName() {
+        return partnerName;
     }
 
     public ProtocolType getProtocolType() {
@@ -130,8 +177,16 @@ public class ExecutionHistory {
         return latencyMillis;
     }
 
+    public int getRetryCount() {
+        return retryCount;
+    }
+
     public String getErrorCode() {
         return errorCode;
+    }
+
+    public String getErrorCategory() {
+        return errorCategory;
     }
 
     public String getErrorMessage() {

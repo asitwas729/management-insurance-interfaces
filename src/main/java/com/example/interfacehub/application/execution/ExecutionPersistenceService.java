@@ -29,12 +29,10 @@ public class ExecutionPersistenceService {
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void reserveIdempotencyKey(String idempotencyKey, String interfaceCode, String executionId) {
-        if (idempotencyRecordRepository.existsByIdempotencyKey(idempotencyKey)) {
-            throw new BusinessException(ErrorCode.DUPLICATE_REQUEST);
-        }
-
         try {
-            idempotencyRecordRepository.save(IdempotencyRecord.reserve(idempotencyKey, interfaceCode, executionId));
+            idempotencyRecordRepository.saveAndFlush(
+                IdempotencyRecord.reserve(idempotencyKey, interfaceCode, executionId)
+            );
         } catch (DataIntegrityViolationException exception) {
             throw new BusinessException(ErrorCode.DUPLICATE_REQUEST);
         }
@@ -44,6 +42,7 @@ public class ExecutionPersistenceService {
     public ExecutionHistory createRunningHistory(
         String executionId,
         String interfaceCode,
+        String interfaceName,
         ProtocolType protocolType,
         TriggerType triggerType,
         String requestPayload
@@ -51,6 +50,7 @@ public class ExecutionPersistenceService {
         ExecutionHistory history = ExecutionHistory.start(
             executionId,
             interfaceCode,
+            interfaceName,
             protocolType,
             triggerType,
             requestPayload
@@ -68,10 +68,10 @@ public class ExecutionPersistenceService {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public ExecutionHistory markFailed(Long historyId, String errorCode, String errorMessage, long latencyMillis) {
+    public ExecutionHistory markFailed(Long historyId, String errorCode, String errorCategory, String errorMessage, long latencyMillis) {
         ExecutionHistory history = executionHistoryRepository.findById(historyId)
             .orElseThrow(() -> new BusinessException(ErrorCode.EXECUTION_NOT_FOUND));
-        history.markFailed(errorCode, errorMessage, latencyMillis);
+        history.markFailed(errorCode, errorCategory, errorMessage, latencyMillis);
         idempotencyRecordRepository.findByExecutionId(history.getExecutionId()).ifPresent(IdempotencyRecord::markFailed);
         return history;
     }
