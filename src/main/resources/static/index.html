@@ -1,216 +1,1038 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Interface Hub Console</title>
+  <title>InterfaceHub 관제 대시보드</title>
   <link rel="stylesheet" href="/app.css" />
 </head>
 <body>
-  <main class="page">
-    <header class="hero">
-      <h1>Interface Hub Console</h1>
-      <p>View interfaces, DLQ, and replay approvals from one screen.</p>
-    </header>
+  <section id="viewLogin" class="view hidden">
+    <div class="login-wrap">
+      <div class="login-card">
+        <h1>InterfaceHub 로그인</h1>
+        <p>관제 대시보드 접속을 위해 계정으로 로그인하세요.</p>
 
-    <section class="panel">
-      <h2>Connection</h2>
-      <div class="grid two">
-        <label>Base URL
-          <input id="baseUrl" type="text" value="http://localhost:8080" />
-        </label>
-        <label>Status
-          <input id="connectionStatus" type="text" value="Not checked" readonly />
-        </label>
-      </div>
-      <button id="checkConnectionBtn">Check API</button>
-    </section>
+        <div class="form-grid two">
+          <label>Base URL
+            <input id="baseUrl" type="text" placeholder="예: http://localhost:8080" />
+          </label>
+          <label>연결 상태
+            <input id="connectionStatus" type="text" value="확인 필요" readonly />
+          </label>
+        </div>
 
-    <section class="panel">
-      <h2>Security (JWT Login)</h2>
-      <div class="grid two">
-        <label>Username
-          <input id="username" type="text" value="admin" />
-        </label>
-        <label>Password
-          <input id="password" type="password" value="servicehotkey" />
-        </label>
-      </div>
-      <div class="action-row">
-        <button id="loginBtn">Login</button>
-        <button id="logoutBtn">Logout</button>
-      </div>
-      <p class="tip">Token-based access for protected replay endpoints.</p>
-      <label>JWT Token (read-only)
-        <textarea id="jwtToken" rows="3" readonly></textarea>
-      </label>
-    </section>
+        <div class="actions">
+          <button id="checkConnectionBtn">연결 확인</button>
+        </div>
 
-    <section class="panel">
-      <h2>Interfaces</h2>
-      <button id="loadInterfacesBtn">Load Interfaces</button>
-      <div class="table-wrap">
-        <table id="interfacesTable">
-          <thead>
-            <tr>
-              <th>Code</th>
-              <th>Name</th>
-              <th>Protocol</th>
-              <th>Owner Team</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+        <div class="form-grid two">
+          <label>아이디
+            <input id="username" type="text" value="admin" />
+          </label>
+          <label>비밀번호
+            <input id="password" type="password" value="servicehotkey" />
+          </label>
+        </div>
 
-    <section class="panel">
-      <h2>DLQ Messages</h2>
-      <div class="grid three">
-        <label>Interface Code
-          <input id="dlqInterfaceCode" type="text" placeholder="e.g. MQ_DEMO_IF" />
-        </label>
-        <label>Page
-          <input id="dlqPage" type="number" value="0" min="0" />
-        </label>
-        <label>Size
-          <input id="dlqSize" type="number" value="20" min="1" />
-        </label>
+        <div class="actions">
+          <button id="loginBtn">로그인</button>
+          <button id="openRegisterBtn" class="secondary">회원가입</button>
+        </div>
       </div>
-      <button id="loadDlqBtn">Load DLQ</button>
-      <div class="table-wrap">
-        <table id="dlqTable">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Interface</th>
-              <th>Topic</th>
-              <th>Reason</th>
-              <th>Replay Count</th>
-              <th>Created At</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+    </div>
+  </section>
 
-    <section class="panel">
-      <h2>Create DLQ Replay Request</h2>
-      <div class="grid two">
-        <label>DLQ ID
-          <input id="replayDlqId" type="number" min="1" />
-        </label>
-        <label>Requester
-          <input id="replayRequester" type="text" value="operator1" />
-        </label>
-      </div>
-      <label>Payload Override (JSON, optional)
-        <textarea id="replayPayload" rows="6" placeholder='{"simulateFailure": false}'></textarea>
-      </label>
-      <button id="createReplayRequestBtn">Create Replay Request</button>
-    </section>
+      <section id="viewDashboard" class="view hidden">
+    <main class="dashboard-layout">
+      <aside class="sidebar">
+        <div class="brand">InterfaceHub</div>
 
-    <section class="panel">
-      <h2>Replay Requests</h2>
-      <div class="grid three">
-        <label>Status Filter
-          <select id="replayStatus">
-            <option value="">ALL</option>
-            <option value="PENDING">PENDING</option>
-            <option value="APPROVED">APPROVED</option>
-            <option value="REJECTED">REJECTED</option>
-            <option value="EXECUTED">EXECUTED</option>
-            <option value="FAILED">FAILED</option>
-          </select>
-        </label>
-        <label>From Date
-          <input id="replayFromDate" type="date" />
-        </label>
-        <label>To Date
-          <input id="replayToDate" type="date" />
-        </label>
-      </div>
-      <div class="grid three">
-        <label>Page
-          <input id="replayPage" type="number" value="0" min="0" />
-        </label>
-        <label>Size
-          <input id="replaySize" type="number" value="20" min="1" />
-        </label>
-        <label>Sort
-          <select id="replaySort">
-            <option value="createdAt,desc">createdAt DESC</option>
-            <option value="createdAt,asc">createdAt ASC</option>
-            <option value="status,asc">status ASC</option>
-            <option value="status,desc">status DESC</option>
-            <option value="id,desc">id DESC</option>
-            <option value="id,asc">id ASC</option>
-          </select>
-        </label>
-      </div>
-      <div class="grid two">
-        <label>Replay Request ID (for action)
-          <input id="replayRequestId" type="number" min="1" />
-        </label>
-        <label>Page Info
-          <input id="replayPageInfo" type="text" value="No data" readonly />
-        </label>
-      </div>
-      <div class="action-row">
-        <button id="loadReplayRequestsBtn">Load Replay Requests</button>
-        <button id="prevReplayPageBtn">Prev Page</button>
-        <button id="nextReplayPageBtn">Next Page</button>
-        <button id="approveReplayBtn">Approve</button>
-        <button id="rejectReplayBtn">Reject</button>
-        <button id="executeReplayBtn">Execute</button>
-      </div>
-      <div class="grid two">
-        <label>Actor Name
-          <input id="replayActor" type="text" value="manager1" />
-        </label>
-        <label>Reject Reason
-          <input id="rejectReason" type="text" value="Invalid business date" />
-        </label>
-      </div>
-      <div class="table-wrap">
-        <table id="replayTable">
-          <thead>
-            <tr>
-              <th>Request ID</th>
-              <th>DLQ ID</th>
-              <th>Interface</th>
-              <th>DLQ Reason</th>
-              <th>Status</th>
-              <th>Requester</th>
-              <th>Approver</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-    </section>
+        <div class="menu-group">
+          <p class="menu-title">메뉴</p>
+          <button id="navDashboardBtn" class="menu-item active"><span>▦</span><span>대시보드</span></button>
+          <button id="navInterfacesBtn" class="menu-item"><span>⌥</span><span>인터페이스</span></button>
+          <button id="navExecutionsBtn" class="menu-item"><span>⏱</span><span>실행 이력</span></button>
+          <button id="navRetriesBtn" class="menu-item">
+            <span>↩</span><span>재처리</span>
+            <span id="badgeRetryPending" class="nav-badge hidden">0</span>
+          </button>
+          <button id="navDlqBtn" class="menu-item">
+            <span>📥</span><span>DLQ 관리</span>
+            <span id="badgeDlqPending" class="nav-badge hidden">0</span>
+          </button>
+          <button id="navSchedulesBtn" class="menu-item"><span>📅</span><span>스케줄 관리</span></button>
+          <button id="navAuditBtn" class="menu-item"><span>📋</span><span>감사 로그</span></button>
+        </div>
 
-    <section class="panel">
-      <h2>Response</h2>
-      <pre id="output"></pre>
-    </section>
-  </main>
+        <div class="side-card">
+          <h3>인터페이스 선택</h3>
+          <label>대상 인터페이스
+            <select id="interfaceSelect"></select>
+          </label>
+          <div class="actions">
+            <button id="reloadDetailBtn">상세 새로고침</button>
+          </div>
+        </div>
+
+        <div class="sidebar-spacer"></div>
+
+        <div class="menu-group">
+          <p class="menu-title">설정</p>
+          <button id="navConfigsBtn" class="menu-item">Config 관리</button>
+          <button id="navSettingsBtn" class="menu-item">준실시간 설정</button>
+          <button id="navOutputBtn" class="menu-item">디버그 로그</button>
+        </div>
+      </aside>
+
+      <section class="main-content">
+        <header class="topbar">
+          <div>
+            <p class="crumb">Dashboards / Default</p>
+            <h2>인터페이스 운영 관제판</h2>
+          </div>
+          <div class="topbar-center">
+            <div class="global-search">
+              <input id="globalSearchInput" type="text" placeholder="전체 검색 (인터페이스/실행ID/오류/URL...)" />
+              <button id="globalSearchBtn" class="secondary">검색</button>
+              <div id="globalSearchResults" class="search-results hidden"></div>
+            </div>
+          </div>
+          <div class="topbar-tools">
+            <div class="time-window" id="dashWindowPicker">
+              <button class="window-btn" data-hours="1">1h</button>
+              <button class="window-btn" data-hours="6">6h</button>
+              <button class="window-btn active" data-hours="24">24h</button>
+              <button class="window-btn" data-hours="168">7d</button>
+              <button class="window-btn" data-hours="720">30d</button>
+            </div>
+            <div class="conn-tools">
+              <label class="conn-label">연결상태
+                <span id="connectionStatusDash" class="conn-pill">확인 필요</span>
+              </label>
+              <button id="checkConnectionBtnDash">연결 확인</button>
+              <button id="logoutBtn" class="secondary">로그아웃</button>
+            </div>
+          </div>
+        </header>
+
+        <section id="panelDashboard" class="panel">
+          <div class="kpi-grid">
+            <article class="kpi-card accent">
+              <h4>전체 인터페이스</h4>
+              <span class="kpi-icon">⌥</span>
+              <strong id="dashTotalInterfaces">-</strong>
+              <p>ACTIVE <span id="dashActiveInterfaces">-</span> / INACTIVE <span id="dashInactiveInterfaces">-</span></p>
+              <p id="dashTrendTotalInterfaces" class="kpi-trend">-</p>
+            </article>
+            <article class="kpi-card">
+              <h4>오늘 실행 수</h4>
+              <span class="kpi-icon">▶</span>
+              <strong id="dashExecTotal">-</strong>
+              <p id="dashTrendExecTotal" class="kpi-trend">-</p>
+              <p>성공 <span id="dashExecSuccess">-</span> / 실패 <span id="dashExecFail">-</span></p>
+            </article>
+            <article class="kpi-card accent">
+              <h4>성공률</h4>
+              <span class="kpi-icon">✓</span>
+              <strong id="dashExecSuccessRate">-</strong>
+              <p>Timeout <span id="dashExecTimeout">-</span></p>
+              <p id="dashTrendSuccessRate" class="kpi-trend">-</p>
+            </article>
+            <article class="kpi-card">
+              <h4>운영 리스크</h4>
+              <span class="kpi-icon">⚠</span>
+              <strong id="dashSlaBreaches">-</strong>
+              <p id="dashTrendSlaBreaches" class="kpi-trend">-</p>
+              <p>최근 DLQ <span id="dashDlqRecent">-</span></p>
+            </article>
+            <article class="kpi-card">
+              <h4>대기 재처리</h4>
+              <span class="kpi-icon">↩</span>
+              <strong id="dashRetryPendingKpi">-</strong>
+              <p>PENDING (Retry)</p>
+              <p id="dashTrendRetryPending" class="kpi-trend">-</p>
+            </article>
+            <article class="kpi-card">
+              <h4>DLQ 대기</h4>
+              <span class="kpi-icon">📥</span>
+              <strong id="dashDlqReplayPendingKpi">-</strong>
+              <p>PENDING (DLQ Replay)</p>
+              <p id="dashTrendDlqPending" class="kpi-trend">-</p>
+            </article>
+          </div>
+
+          <div class="content-grid three-equal">
+            <article class="panel-card">
+              <h3>실행 분포</h3>
+              <canvas id="dashExecDonut" height="150"></canvas>
+            </article>
+            <article class="panel-card">
+              <h3>최근 지연 시간 (ms)</h3>
+              <canvas id="dashLatencyTrend" height="150"></canvas>
+            </article>
+            <article class="panel-card">
+              <h3>실패 상위</h3>
+              <canvas id="dashTopFailBar" height="150"></canvas>
+            </article>
+          </div>
+
+          <article class="panel-card">
+            <div class="panel-title-row">
+              <h3>인터페이스 헬스</h3>
+              <span class="meta">성공률/평균 레이턴시/SLA 위반/마지막 실행</span>
+            </div>
+            <div id="dashHealthGrid" class="health-grid"></div>
+          </article>
+
+          <article class="panel-card">
+            <div class="panel-title-row">
+              <h3>AI 인시던트 요약</h3>
+              <button id="dashIncidentRefreshBtn" class="secondary">새로 고침</button>
+            </div>
+            <blockquote id="dashIncidentText" class="incident-box">-</blockquote>
+            <p id="dashIncidentMeta" class="meta">-</p>
+          </article>
+
+          <div class="content-grid two">
+            <article class="panel-card">
+              <div class="panel-title-row">
+                <h3>실패 Top 인터페이스</h3>
+                <button id="dashRefreshBtn" class="secondary">새로고침</button>
+              </div>
+              <table id="dashTopFailuresTable">
+                <thead>
+                  <tr>
+                    <th>Interface</th>
+                    <th>Total</th>
+                    <th>Failures</th>
+                    <th>FAILED</th>
+                    <th>TIMEOUT</th>
+                    <th>CANCELLED</th>
+                    <th>FailRate</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </article>
+
+            <article class="panel-card split-card">
+              <div>
+                <h3>Retry 상태</h3>
+                <div class="mini-donut-wrap">
+                  <canvas id="dashRetryDonut" height="140"></canvas>
+                  <div id="dashRetryLegend" class="donut-legend"></div>
+                </div>
+              </div>
+              <div>
+                <h3>DLQ Replay 상태</h3>
+                <div class="mini-donut-wrap">
+                  <canvas id="dashDlqReplayDonut" height="140"></canvas>
+                  <div id="dashDlqReplayLegend" class="donut-legend"></div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <div class="content-grid two">
+            <article class="panel-card">
+              <div class="panel-title-row">
+                <h3>SLA 위반 현황</h3>
+                <span class="meta">인터페이스별 위반 횟수</span>
+              </div>
+              <canvas id="dashSlaBar" height="120"></canvas>
+            </article>
+            <article class="panel-card">
+              <h3>최근 실행 활동</h3>
+              <ul id="dashActivityFeed" class="activity-feed"></ul>
+            </article>
+          </div>
+        </section>
+
+        <section id="panelInterfaces" class="panel hidden">
+          <div class="subtab-strip" id="interfaceSubtabs">
+            <button class="subtab active" data-itab="info">기본 정보</button>
+            <button class="subtab" data-itab="sla">SLA / 성능</button>
+            <button class="subtab" data-itab="exec">수동 실행</button>
+          </div>
+
+          <div id="itabInfo">
+            <article class="panel-card">
+              <h3>기본 정보</h3>
+              <div class="kv">
+                <span>코드</span><strong id="bInterfaceCode">-</strong>
+                <span>이름</span><strong id="bInterfaceName">-</strong>
+                <span>프로토콜</span><strong id="bProtocol">-</strong>
+                <span>상태</span>
+                <strong id="bStatus">
+                  <span id="bStatusPill" class="status-pill">-</span>
+                </strong>
+                <span>소속팀</span><strong id="bOwnerTeam">-</strong>
+                <span>업무분류</span><strong id="bBusiness">-</strong>
+                <span>연계기관</span><strong id="bExternalOrg">-</strong>
+                <span>SLA(ms)</span><strong id="bSla">-</strong>
+                <span>최근 실행</span><strong id="bLastExecutedAt">-</strong>
+              </div>
+            </article>
+          </div>
+
+          <div id="itabSla" class="hidden">
+            <div class="content-grid two">
+              <article class="panel-card">
+                <h3>레이턴시 추이 (최근 20건)</h3>
+                <canvas id="ifLatencyChart" height="160"></canvas>
+              </article>
+              <article class="panel-card">
+                <h3>상태 분포</h3>
+                <canvas id="ifStatusDonut" height="140"></canvas>
+              </article>
+            </div>
+          </div>
+
+          <div id="itabExec" class="hidden">
+            <article class="panel-card">
+              <h3>수동 실행</h3>
+              <div class="form-grid two">
+                <label>Idempotency Key
+                  <input id="execIdempotencyKey" type="text" />
+                </label>
+                <label>환경
+                  <select id="execEnvironment">
+                    <option value="">기본</option>
+                    <option value="DEV">DEV</option>
+                    <option value="TEST">TEST</option>
+                    <option value="PROD">PROD</option>
+                  </select>
+                </label>
+              </div>
+              <div class="form-grid two">
+                <label>Client ID
+                  <input id="execClientId" type="text" />
+                </label>
+                <label>Client Secret
+                  <input id="execClientSecret" type="text" />
+                </label>
+              </div>
+              <div class="form-grid two">
+                <label>API Key
+                  <input id="execApiKey" type="text" />
+                </label>
+                <label>Partner ID
+                  <input id="execPartnerId" type="text" />
+                </label>
+              </div>
+              <label>Payload(JSON)
+                <textarea id="execPayload" rows="5">{}</textarea>
+              </label>
+              <div class="actions">
+                <button id="executeBtn">실행</button>
+              </div>
+              <pre id="execResultBox">실행 결과가 여기에 표시됩니다.</pre>
+            </article>
+          </div>
+        </section>
+
+        <section id="panelConfigs" class="panel hidden">
+          <article class="panel-card">
+            <div class="panel-title-row">
+              <h3>설정 (Config)</h3>
+              <button id="loadConfigsBtn">설정 조회</button>
+            </div>
+            <table id="configsTable">
+              <thead>
+                <tr>
+                  <th>Config ID</th>
+                  <th>Version</th>
+                  <th>Env</th>
+                  <th>Endpoint</th>
+                  <th>Timeout(ms)</th>
+                  <th>Published</th>
+                  <th>CreatedAt</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <div class="form-grid two">
+              <label>Publish Actor
+                <input id="publishActor" type="text" value="admin" />
+              </label>
+              <label>Publish Config ID
+                <input id="publishConfigId" type="number" min="1" />
+              </label>
+            </div>
+            <div class="actions">
+              <button id="publishConfigBtn">Publish</button>
+            </div>
+          </article>
+        </section>
+
+        <section id="panelDlq" class="panel hidden">
+          <!-- 서브탭 -->
+          <div class="subtab-strip">
+            <button class="subtab active" data-tab="dlqMessages">DLQ 메시지</button>
+            <button class="subtab" data-tab="dlqReplays">리플레이 요청</button>
+          </div>
+
+          <!-- DLQ 메시지 탭 -->
+          <div id="tabDlqMessages">
+            <article class="panel-card">
+              <div class="panel-title-row">
+                <h3>DLQ 메시지</h3>
+                <button id="loadDlqBtn">조회</button>
+              </div>
+              <div class="form-grid three compact">
+                <label>인터페이스 코드
+                  <input id="dlqFilterCode" type="text" />
+                </label>
+                <label>페이지
+                  <input id="dlqFilterPage" type="number" value="0" min="0" />
+                </label>
+                <label>크기
+                  <input id="dlqFilterSize" type="number" value="20" />
+                </label>
+              </div>
+              <div class="actions">
+                <button id="dlqCreateReplayBtn" class="secondary">선택 항목 리플레이 요청</button>
+              </div>
+              <table id="dlqTable">
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" id="dlqSelectAll"/></th>
+                    <th>ID</th><th>인터페이스</th><th>Topic</th>
+                    <th>사유</th><th>재처리 횟수</th><th>생성 시각</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+              <p id="dlqPageInfo" class="meta"></p>
+              <div class="actions">
+                <button id="dlqPrevBtn" class="secondary">이전</button>
+                <button id="dlqNextBtn" class="secondary">다음</button>
+              </div>
+            </article>
+          </div>
+
+          <!-- 리플레이 요청 탭 -->
+          <div id="tabDlqReplays" class="hidden">
+            <article class="panel-card">
+              <div class="panel-title-row">
+                <h3>리플레이 요청 현황</h3>
+                <button id="loadDlqReplaysBtn">조회</button>
+              </div>
+
+              <!-- 워크플로우 상태 배너 -->
+              <div class="workflow-banner">
+                <div class="wf-stage" id="wfPending">
+                  <span class="wf-count" id="wfPendingCount">-</span>
+                  <span class="wf-label">PENDING</span>
+                </div>
+                <div class="wf-arrow">→</div>
+                <div class="wf-stage" id="wfApproved">
+                  <span class="wf-count" id="wfApprovedCount">-</span>
+                  <span class="wf-label">APPROVED</span>
+                </div>
+                <div class="wf-arrow">→</div>
+                <div class="wf-stage" id="wfExecuted">
+                  <span class="wf-count" id="wfExecutedCount">-</span>
+                  <span class="wf-label">EXECUTED</span>
+                </div>
+                <div class="wf-stage fail" id="wfFailed">
+                  <span class="wf-count" id="wfFailedCount">-</span>
+                  <span class="wf-label">FAILED</span>
+                </div>
+              </div>
+
+              <div class="form-grid three compact">
+                <label>상태 필터
+                  <select id="dlqReplayStatusFilter">
+                    <option value="">전체</option>
+                    <option value="PENDING">PENDING</option>
+                    <option value="APPROVED">APPROVED</option>
+                    <option value="REJECTED">REJECTED</option>
+                    <option value="EXECUTED">EXECUTED</option>
+                    <option value="FAILED">FAILED</option>
+                  </select>
+                </label>
+                <label>From
+                  <input id="dlqReplayFrom" type="date" />
+                </label>
+                <label>To
+                  <input id="dlqReplayTo" type="date" />
+                </label>
+              </div>
+
+              <table id="dlqReplayTable">
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" id="dlqReplaySelectAll"/></th>
+                    <th>ID</th><th>DLQ ID</th><th>인터페이스</th>
+                    <th>상태</th><th>요청자</th><th>승인자</th><th>생성시각</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+
+              <!-- 컨텍스트 액션 버튼 (행 선택 시 활성화) -->
+              <div id="dlqReplayActions" class="context-actions hidden">
+                <span class="context-label">선택: <strong id="dlqReplaySelectedCount">0</strong>건</span>
+                <button id="dlqReplayApproveBtn">✓ 승인</button>
+                <button id="dlqReplayRejectBtn" class="secondary">✗ 반려</button>
+                <button id="dlqReplayExecuteBtn">▶ 실행</button>
+              </div>
+
+              <div class="actions">
+                <button id="dlqReplayPrevBtn" class="secondary">이전</button>
+                <button id="dlqReplayNextBtn" class="secondary">다음</button>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="panelSchedules" class="panel hidden">
+          <article class="panel-card">
+            <div class="panel-title-row">
+              <h3>스케줄 관리</h3>
+              <button id="loadSchedulesBtn">조회</button>
+            </div>
+            <table id="scheduleTable">
+              <thead>
+                <tr>
+                  <th>Interface</th>
+                  <th>Cron</th>
+                  <th>Enabled</th>
+                  <th>UpdatedAt</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </article>
+        </section>
+
+        <section id="panelAudit" class="panel hidden">
+          <article class="panel-card">
+            <div class="panel-title-row">
+              <h3>감사 로그</h3>
+              <button id="searchAuditBtn">검색</button>
+            </div>
+            <div class="form-grid three compact">
+              <label>Actor
+                <input id="auditActor" type="text" placeholder="예: admin" />
+              </label>
+              <label>Action
+                <input id="auditAction" type="text" placeholder="예: APPROVE" />
+              </label>
+              <label>Target 유형
+                <input id="auditTargetType" type="text" placeholder="예: REPLAY_REQUEST" />
+              </label>
+            </div>
+            <div class="form-grid two compact">
+              <label>From
+                <input id="auditFrom" type="date" />
+              </label>
+              <label>To
+                <input id="auditTo" type="date" />
+              </label>
+            </div>
+            <table id="auditTable">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Actor</th>
+                  <th>Action</th>
+                  <th>Target 유형</th>
+                  <th>Target ID</th>
+                  <th>생성 시각</th>
+                  <th>상세</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <div class="actions">
+              <button id="auditPrevBtn" class="secondary">이전</button>
+              <button id="auditNextBtn" class="secondary">다음</button>
+            </div>
+            <p id="auditMeta" class="meta"></p>
+          </article>
+        </section>
+
+        <section id="panelSettings" class="panel hidden">
+          <article class="panel-card">
+            <h3>설정</h3>
+            <div class="setting-box">
+            <div class="setting-head">
+              <div>
+                <h4 style="margin:0;">준실시간 추적</h4>
+                <p class="meta">실행/재처리/대시보드 데이터를 주기적으로 갱신합니다.</p>
+              </div>
+            </div>
+
+              <div class="form-grid two">
+                <label>갱신 주기
+                  <select id="pollIntervalSec">
+                    <option value="1">1초</option>
+                    <option value="2">2초</option>
+                    <option value="3" selected>3초</option>
+                    <option value="4">4초</option>
+                    <option value="5">5초</option>
+                  </select>
+                </label>
+                <label>상태
+                  <input id="pollStatusInput" type="text" value="중지" readonly />
+                </label>
+              </div>
+              <div class="actions">
+                <button id="pollToggleBtn">추적 시작</button>
+              </div>
+              <p id="lastUpdatedAt" class="meta">마지막 갱신: -</p>
+            </div>
+          </article>
+        </section>
+
+        <section id="panelExecutions" class="panel hidden">
+          <article class="panel-card">
+            <div class="panel-title-row">
+              <h3>실행 흐름</h3>
+              <button id="loadHistoriesBtn">이력 조회</button>
+            </div>
+            <div class="flow-summary">
+              <span>실행 ID: <strong id="flowExecutionId">-</strong></span>
+              <span>상태: <strong id="flowStatus">-</strong></span>
+              <span>재시도: <strong id="flowRetry">-</strong></span>
+            </div>
+            <div class="flow-progress-bg"><div id="flowProgressBar" class="flow-progress-bar"></div></div>
+            <div id="flowStages" class="flow-stages"></div>
+          </article>
+
+          <article class="panel-card">
+            <h3>실행 이력 상세 검색</h3>
+            <div class="form-grid three compact">
+              <label>Execution ID
+                <input id="hsExecutionIdContains" type="text" placeholder="부분 일치" />
+              </label>
+              <label>Interface Code
+                <input id="hsInterfaceCode" type="text" placeholder="예: REST_IF_001" />
+              </label>
+              <label>Protocol
+                <select id="hsProtocolType">
+                  <option value="">전체</option>
+                  <option value="REST">REST</option>
+                  <option value="SOAP">SOAP</option>
+                  <option value="MQ">MQ</option>
+                  <option value="BATCH">BATCH</option>
+                  <option value="SFTP">SFTP</option>
+                </select>
+              </label>
+            </div>
+            <div class="form-grid three compact">
+              <label>Status
+                <select id="hsStatus">
+                  <option value="">전체</option>
+                  <option value="RUNNING">RUNNING</option>
+                  <option value="SUCCESS">SUCCESS</option>
+                  <option value="FAILED">FAILED</option>
+                  <option value="TIMEOUT">TIMEOUT</option>
+                  <option value="CANCELLED">CANCELLED</option>
+                </select>
+              </label>
+              <label>Trigger
+                <select id="hsTriggerType">
+                  <option value="">전체</option>
+                  <option value="MANUAL">MANUAL</option>
+                  <option value="SCHEDULED">SCHEDULED</option>
+                  <option value="RETRY">RETRY</option>
+                  <option value="SANDBOX">SANDBOX</option>
+                  <option value="MQ_INBOUND">MQ_INBOUND</option>
+                </select>
+              </label>
+              <label>Error Code
+                <input id="hsErrorCode" type="text" placeholder="오류 코드" />
+              </label>
+            </div>
+            <div class="form-grid three compact">
+              <label>Error Message 포함
+                <input id="hsErrorMessageContains" type="text" placeholder="메시지 일부" />
+              </label>
+              <label>From
+                <input id="hsFromAt" type="datetime-local" />
+              </label>
+              <label>To
+                <input id="hsToAt" type="datetime-local" />
+              </label>
+            </div>
+            <div class="form-grid three compact">
+              <label>Latency 최소(ms)
+                <input id="hsLatencyMin" type="number" min="0" />
+              </label>
+              <label>Latency 최대(ms)
+                <input id="hsLatencyMax" type="number" min="0" />
+              </label>
+              <label>Page Size
+                <input id="hsPageSize" type="number" min="1" value="20" />
+              </label>
+            </div>
+            <div class="actions">
+              <button id="historySearchBtn">검색</button>
+              <button id="historySearchResetBtn" class="secondary">초기화</button>
+              <button id="hsPrevBtn" class="secondary">이전</button>
+              <button id="hsNextBtn" class="secondary">다음</button>
+            </div>
+            <p id="hsResultMeta" class="meta">검색 결과: -</p>
+
+            <div id="hsChartArea" class="hidden">
+              <div class="content-grid two">
+                <article class="panel-card">
+                  <h3>시간대별 실행 수</h3>
+                  <canvas id="hsTimelineChart" height="120"></canvas>
+                </article>
+                <article class="panel-card">
+                  <h3>상태 분포</h3>
+                  <canvas id="hsStatusDonut" height="120"></canvas>
+                </article>
+              </div>
+            </div>
+
+            <table id="hsResultTable">
+              <thead>
+                <tr>
+                  <th>Execution ID</th>
+                  <th>Interface</th>
+                  <th>Status</th>
+                  <th>Protocol</th>
+                  <th>Started</th>
+                  <th>Ended</th>
+                  <th>Latency(ms)</th>
+                  <th>Error</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </article>
+        </section>
+
+        <section id="panelRetries" class="panel hidden">
+          <div class="subtab-strip" id="retriesSubtabs">
+            <button class="subtab active" data-rtab="alerts">실패 Alert 목록</button>
+            <button class="subtab" data-rtab="kanban">재처리 작업 현황</button>
+          </div>
+
+          <div id="rtabAlerts">
+          <div class="alert-layout">
+            <article class="panel-card alert-list-card">
+              <div class="panel-title-row">
+                <h3>Alert List / 실패 실행 목록</h3>
+                <button id="loadRetryTasksBtn" class="secondary">작업 조회</button>
+              </div>
+              <div class="form-grid three compact">
+                <label>시간
+                  <select id="failureTimeFilter">
+                    <option value="ALL">전체</option>
+                    <option value="1H">1시간</option>
+                    <option value="6H">6시간</option>
+                    <option value="24H" selected>24시간</option>
+                  </select>
+                </label>
+                <label>상태
+                  <select id="failureStatusFilter">
+                    <option value="ALL">전체</option>
+                    <option value="FAILED" selected>FAILED</option>
+                    <option value="RUNNING">RUNNING</option>
+                    <option value="SUCCESS">SUCCESS</option>
+                    <option value="CANCELLED">CANCELLED</option>
+                  </select>
+                </label>
+                <label>타입
+                  <select id="failureTypeFilter">
+                    <option value="ALL">전체</option>
+                    <option value="NETWORK">NETWORK</option>
+                    <option value="AUTH">AUTH</option>
+                    <option value="DATA">DATA</option>
+                    <option value="BUSINESS">BUSINESS</option>
+                    <option value="SYSTEM">SYSTEM</option>
+                    <option value="POLICY">POLICY</option>
+                  </select>
+                </label>
+              </div>
+              <table id="historyTable" class="dense-table">
+                <thead>
+                  <tr>
+                    <th><input type="checkbox" id="selectAllFailures" /></th>
+                    <th>Status</th>
+                    <th>Execution</th>
+                    <th>ACK</th>
+                    <th>Activated</th>
+                    <th>Condition</th>
+                    <th>Tag</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </article>
+
+            <article class="panel-card alert-detail-card">
+              <h3>상세 패널</h3>
+              <div class="kv">
+                <span>선택 실행ID</span><strong id="selectedExecutionId">-</strong>
+                <span>실패 유형</span><strong id="failCategoryText">-</strong>
+                <span>비즈니스 해석</span><strong id="failReasonText">-</strong>
+              </div>
+              <label>요청
+                <textarea id="failRequestPayload" rows="4" readonly></textarea>
+              </label>
+              <label>응답
+                <textarea id="failResponsePayload" rows="4" readonly></textarea>
+              </label>
+              <label>에러 메시지
+                <textarea id="failErrorPayload" rows="3" readonly></textarea>
+              </label>
+              <div class="actions">
+                <button id="singleRetryBtn">Retry</button>
+                <button id="fixActionBtn" class="secondary">Fix</button>
+                <button id="ignoreActionBtn" class="secondary">Ignore</button>
+              </div>
+              <h3>재처리 정책</h3>
+              <div class="form-grid two">
+                <label>요청자
+                  <input id="retryRequester" type="text" value="operator1" />
+                </label>
+                <label>승인/실행자
+                  <input id="retryActor" type="text" value="admin" />
+                </label>
+              </div>
+              <div class="form-grid two">
+                <label>사유 코드
+                  <input id="retryReasonCode" type="text" value="MANUAL_RETRY" />
+                </label>
+                <label>사유 상세
+                  <input id="retryReasonDetail" type="text" value="운영자 수동 재처리" />
+                </label>
+              </div>
+              <div class="form-grid three">
+                <label>최대 횟수
+                  <input id="retryMaxAttempts" type="number" min="1" max="10" value="3" />
+                </label>
+                <label>지연(ms)
+                  <input id="retryDelayMs" type="number" min="0" value="1000" />
+                </label>
+                <label>Backoff
+                  <select id="retryBackoffType">
+                    <option value="NONE">고정</option>
+                    <option value="LINEAR">선형</option>
+                    <option value="EXPONENTIAL">지수</option>
+                  </select>
+                </label>
+              </div>
+              <label>조건 기반 재처리
+                <select id="retryCondition">
+                  <option value="ALWAYS">항상</option>
+                  <option value="NETWORK_ONLY">네트워크 오류만</option>
+                  <option value="NON_BUSINESS">업무 오류 제외</option>
+                </select>
+              </label>
+              <div class="actions">
+                  <button id="bulkRetryBtn">Bulk Retry</button>
+                </div>
+              <h3 class="top-gap">재처리 작업 현황</h3>
+              <table id="retryTable" class="dense-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>원본 실행ID</th>
+                    <th>상태</th>
+                    <th>요청자</th>
+                    <th>승인자</th>
+                    <th>생성시각</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </article>
+          </div>
+          </div><!-- /rtabAlerts -->
+
+          <div id="rtabKanban" class="hidden">
+            <div class="kanban-board">
+              <div class="kanban-col">
+                <div class="kanban-col-header">
+                  <span>PENDING</span>
+                  <span id="kanbanCountPending" class="status-pill pending">0</span>
+                </div>
+                <div id="kanbanColPending"></div>
+              </div>
+              <div class="kanban-col">
+                <div class="kanban-col-header">
+                  <span>APPROVED → EXECUTED</span>
+                  <span id="kanbanCountApproved" class="status-pill success">0</span>
+                </div>
+                <div id="kanbanColApproved"></div>
+              </div>
+              <div class="kanban-col">
+                <div class="kanban-col-header">
+                  <span>FAILED / REJECTED</span>
+                  <span id="kanbanCountFailed" class="status-pill fail">0</span>
+                </div>
+                <div id="kanbanColFailed"></div>
+              </div>
+            </div>
+          </div><!-- /rtabKanban -->
+        </section>
+
+        <section id="panelSchedules" class="panel hidden">
+          <article class="panel-card">
+            <div class="panel-title-row">
+              <h3>스케줄 관리</h3>
+              <button id="loadSchedulesBtn">조회</button>
+            </div>
+            <table id="schedulesTable">
+              <thead>
+                <tr>
+                  <th>인터페이스 코드</th>
+                  <th>Cron 표현식</th>
+                  <th>활성 여부</th>
+                  <th>페이로드 템플릿</th>
+                  <th>생성 시각</th>
+                  <th>액션</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </article>
+
+          <article class="panel-card">
+            <h3>새 스케줄 등록</h3>
+            <div class="form-grid two">
+              <label>인터페이스 코드
+                <input id="schedCode" type="text" placeholder="예: REST_IF_001" />
+              </label>
+              <label>Cron 표현식
+                <input id="schedCron" type="text" placeholder="예: 0 */5 * * * " />
+              </label>
+            </div>
+            <label>페이로드 템플릿 (JSON)
+              <textarea id="schedPayload" rows="4">{}</textarea>
+            </label>
+            <div class="actions">
+              <button id="createScheduleBtn">스케줄 등록</button>
+            </div>
+          </article>
+        </section>
+
+        <section id="panelOutput" class="panel hidden">
+          <article class="panel-card">
+            <div class="panel-title-row">
+              <h3>응답 / 디버그 로그</h3>
+              <div class="actions">
+                <button id="loadApiLogsBtn" class="secondary">API 로그 조회</button>
+                <button id="clearApiLogsBtn" class="secondary">화면 로그 비우기</button>
+              </div>
+            </div>
+            <p class="meta">API 요청/응답은 자동으로 저장되며, 조회 버튼을 누르면 서버에 저장된 로그를 불러옵니다.</p>
+            <pre id="apiLogBox"></pre>
+            <div style="height:10px;"></div>
+            <h4 style="margin:0 0 8px;">화면 출력</h4>
+            <pre id="output"></pre>
+          </article>
+        </section>
+      </section>
+    </main>
+  </section>
 
   <div id="confirmModal" class="modal hidden">
     <div class="modal-content">
-      <h3 id="confirmTitle">Confirm Action</h3>
+      <h3 id="confirmTitle">작업 확인</h3>
       <p id="confirmMessage"></p>
-      <div class="action-row">
-        <button id="confirmOkBtn">Confirm</button>
-        <button id="confirmCancelBtn" class="secondary">Cancel</button>
+      <div class="actions">
+        <button id="confirmOkBtn">확인</button>
+        <button id="confirmCancelBtn" class="secondary">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="registerModal" class="modal hidden">
+    <div class="modal-content">
+      <div class="panel-title-row">
+        <h3>회원가입</h3>
+        <button id="regCloseBtn" class="secondary">닫기</button>
+      </div>
+      <p class="meta">아이디는 영문/숫자/언더스코어(_), 3~30자. 비밀번호는 8~72자.</p>
+
+      <div class="form-grid">
+        <label>아이디
+          <input id="regUsername" type="text" placeholder="예: operator_01" />
+        </label>
+        <label>비밀번호
+          <input id="regPassword" type="password" placeholder="8자 이상" />
+        </label>
+        <label>비밀번호 확인
+          <input id="regPasswordConfirm" type="password" placeholder="비밀번호 재입력" />
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="regSubmitBtn">가입하기</button>
+        <button id="regCancelBtn" class="secondary">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="executionDetailModal" class="modal hidden">
+    <div class="modal-content modal-wide">
+      <div class="panel-title-row">
+        <h3>실행 이력 상세</h3>
+        <button id="execDetailCloseBtn" class="secondary">닫기</button>
+      </div>
+
+      <div class="kv">
+        <span>Execution ID</span><strong id="execDetailExecutionId">-</strong>
+        <span>Status</span><strong id="execDetailStatus">-</strong>
+        <span>Trigger</span><strong id="execDetailTriggerType">-</strong>
+        <span>Protocol</span><strong id="execDetailProtocolType">-</strong>
+        <span>Started</span><strong id="execDetailStartedAt">-</strong>
+        <span>Ended</span><strong id="execDetailEndedAt">-</strong>
+        <span>Latency(ms)</span><strong id="execDetailLatency">-</strong>
+        <span>Error Code</span><strong id="execDetailErrorCode">-</strong>
+      </div>
+
+      <label class="top-gap">Error Message
+        <textarea id="execDetailErrorMessage" rows="2" readonly></textarea>
+      </label>
+      <label class="top-gap">Request Payload
+        <textarea id="execDetailRequestPayload" rows="5" readonly></textarea>
+      </label>
+      <label class="top-gap">Response Payload
+        <textarea id="execDetailResponsePayload" rows="5" readonly></textarea>
+      </label>
+
+      <div class="actions">
+        <button id="execDetailRetryBtn">재처리</button>
+        <button id="execDetailGoConfigsBtn" class="secondary">설정 이동</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="auditDetailModal" class="modal hidden">
+    <div class="modal-content modal-wide">
+      <div class="panel-title-row">
+        <h3>감사 로그 상세</h3>
+        <button id="auditDetailCloseBtn" class="secondary">닫기</button>
+      </div>
+      <p id="auditDetailMeta" class="meta">-</p>
+      <div class="diff-grid">
+        <div class="diff-col">
+          <h4 class="diff-title">Before</h4>
+          <div id="auditBeforeBox" class="diff-box"></div>
+        </div>
+        <div class="diff-col">
+          <h4 class="diff-title">After</h4>
+          <div id="auditAfterBox" class="diff-box"></div>
+        </div>
       </div>
     </div>
   </div>
 
   <div id="toast" class="toast hidden"></div>
-
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>
