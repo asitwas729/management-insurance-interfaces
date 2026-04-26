@@ -1,6 +1,8 @@
 package com.example.interfacehub.adapter.soap;
 
 import com.example.interfacehub.application.execution.InterfaceExecutor;
+import com.example.interfacehub.application.standardmessage.StandardMessageValidationService;
+import com.example.interfacehub.application.standardmessage.StandardValidationResult;
 import com.example.interfacehub.common.error.ErrorCode;
 import com.example.interfacehub.domain.execution.ExecutionContext;
 import com.example.interfacehub.domain.execution.ExecutionResult;
@@ -51,18 +53,21 @@ public class SoapInterfaceExecutor implements InterfaceExecutor {
 
     private final RawXmlOxMapper rawXmlOxMapper;
     private final ExternalCallResilienceService resilienceService;
+    private final StandardMessageValidationService standardMessageValidationService;
     private final ObjectMapper objectMapper;
     private final MeterRegistry meterRegistry; // Add MeterRegistry
     private final Tracer tracer; // Add Tracer
 
     public SoapInterfaceExecutor(
         ExternalCallResilienceService resilienceService,
+        StandardMessageValidationService standardMessageValidationService,
         ObjectMapper objectMapper,
         MeterRegistry meterRegistry, // Inject MeterRegistry
         Tracer tracer // Inject Tracer
     ) {
         this.rawXmlOxMapper = new RawXmlOxMapper();
         this.resilienceService = resilienceService;
+        this.standardMessageValidationService = standardMessageValidationService;
         this.objectMapper = objectMapper;
         this.meterRegistry = meterRegistry;
         this.tracer = tracer; // Assign Tracer
@@ -85,9 +90,13 @@ public class SoapInterfaceExecutor implements InterfaceExecutor {
                 .tag("outcome", "unknown") // Will be updated after execution
                 .register(meterRegistry);
 
-            long startTime = System.currentTimeMillis();
-            result = resilienceService.execute(context.interfaceCode(), () -> {
-                ExecutionResult invokeResult = invoke(context);
+            SoapRequest request = toSoapRequest(context);
+            ExecutionResult validationFailure = validateStandardMessageIfRequired(context, request.bodyXml());
+            if (validationFailure != null) {
+                result = validationFailure;
+            } else {
+                result = resilienceService.execute(context.interfaceCode(), () -> {
+                    ExecutionResult invokeResult = invoke(context, request);
                 // Update span status and tags based on the outcome
                 if (invokeResult.success()) {
                     span.setStatus(io.opentelemetry.api.trace.StatusCode.OK);
@@ -100,7 +109,8 @@ public class SoapInterfaceExecutor implements InterfaceExecutor {
                     span.setAttribute("execution.latency", invokeResult.latencyMillis());
                 }
                 return invokeResult;
-            }, ErrorCode.SOAP_CALL_FAILED);
+                }, ErrorCode.SOAP_CALL_FAILED);
+            }
 
             // Record timer after resilience service completes
             String outcome = result.success() ? "success" : "failure";
@@ -129,10 +139,32 @@ public class SoapInterfaceExecutor implements InterfaceExecutor {
         return result;
     }
 
-    private ExecutionResult invoke(ExecutionContext context) {
+    private ExecutionResult validateStandardMessageIfRequired(ExecutionContext context, String xml) {
+        StandardMessageValidationService.StandardSchemaRef ref =
+            standardMessageValidationService.resolveFromProtocolConfigJson(context.protocolConfigJson());
+        if (!ref.enabled()) {
+            return null;
+        }
+
+        StandardValidationResult result = standardMessageValidationService.validate(
+            ref.schemaCode(),
+            ref.version(),
+            xml,
+            ref.enforceRules()
+        );
+        if (result.valid()) {
+            return null;
+        }
+
+        String message = result.errors().isEmpty()
+            ? "Standard validation failed"
+            : result.errors().get(0).message();
+        return ExecutionResult.failure(ErrorCode.STANDARD_VALIDATION_FAILED.name(), message, 0L);
+    }
+
+    private ExecutionResult invoke(ExecutionContext context, SoapRequest request) {
         long start = System.currentTimeMillis();
         try {
-            SoapRequest request = toSoapRequest(context);
             WebServiceTemplate requestTemplate = createRequestTemplate(context.timeoutMillis());
             Object response = requestTemplate.marshalSendAndReceive(
                 context.endpoint(),

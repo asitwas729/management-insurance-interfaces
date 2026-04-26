@@ -1,6 +1,9 @@
 package com.example.interfacehub.adapter.rest;
 
+import com.example.interfacehub.application.fixedlength.FixedLengthConfig;
+import com.example.interfacehub.application.fixedlength.FixedLengthMessageService;
 import com.example.interfacehub.application.execution.InterfaceExecutor;
+import com.example.interfacehub.common.error.BusinessException;
 import com.example.interfacehub.common.error.ErrorCode;
 import com.example.interfacehub.domain.execution.ExecutionContext;
 import com.example.interfacehub.domain.execution.ExecutionResult;
@@ -12,6 +15,7 @@ import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.Tracer;
 import io.opentelemetry.context.Scope;
 import java.time.Duration;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientRequestException;
@@ -24,17 +28,20 @@ public class RestInterfaceExecutor implements InterfaceExecutor {
     private final ExternalCallResilienceService resilienceService;
     private final MeterRegistry meterRegistry; // Add MeterRegistry
     private final Tracer tracer; // Add Tracer
+    private final FixedLengthMessageService fixedLengthMessageService;
 
     public RestInterfaceExecutor(
         WebClient.Builder webClientBuilder,
         ExternalCallResilienceService resilienceService,
         MeterRegistry meterRegistry, // Inject MeterRegistry
-        Tracer tracer // Inject Tracer
+        Tracer tracer, // Inject Tracer
+        FixedLengthMessageService fixedLengthMessageService
     ) {
         this.webClientBuilder = webClientBuilder;
         this.resilienceService = resilienceService;
         this.meterRegistry = meterRegistry;
         this.tracer = tracer; // Assign Tracer
+        this.fixedLengthMessageService = fixedLengthMessageService;
     }
 
     @Override
@@ -76,7 +83,7 @@ public class RestInterfaceExecutor implements InterfaceExecutor {
             timer.record(Duration.ofMillis(result.latencyMillis()));
             meterRegistry.counter("execution.rest.count", "interfaceCode", context.interfaceCode(), "outcome", outcome).increment();
 
-            } catch (Throwable t) { // Catching Throwable to include potential RuntimeExceptions from resilienceService
+        } catch (Throwable t) { // Catching Throwable to include potential RuntimeExceptions from resilienceService
             // Handle exceptions from resilienceService or the lambda itself
             span.setStatus(io.opentelemetry.api.trace.StatusCode.ERROR);
             span.setAttribute("execution.outcome", "failure");
@@ -94,29 +101,68 @@ public class RestInterfaceExecutor implements InterfaceExecutor {
             span.recordException(t);
             // Re-throw to ensure the orchestrator gets the exception
             throw t;
-            } finally {
+        } finally {
             span.end();
-            }
-            return result;
-            }
+        }
+        return result;
+    }
 
-            private ExecutionResult invoke(ExecutionContext context) {
-            long start = System.currentTimeMillis();
-            try {
-            String response = webClientBuilder.build()
+    private ExecutionResult invoke(ExecutionContext context) {
+        long start = System.currentTimeMillis();
+        try {
+            FixedLengthConfig fixed = fixedLengthMessageService.resolve(context.protocolConfigJson());
+
+            WebClient.RequestBodySpec request = webClientBuilder.build()
                 .post()
                 .uri(context.endpoint())
-                .headers(headers -> headers.addAll(context.headers()))
+                .headers(headers -> headers.addAll(context.headers()));
+
+            if (fixed.enforceRequest() && fixed.requestSchema() != null) {
+                byte[] bodyBytes = fixedLengthMessageService.encodeJsonPayloadToFixedBytes(context.payload(), fixed.requestSchema());
+                String charset = fixed.requestSchema().charset() == null ? "UTF-8" : fixed.requestSchema().charset();
+                request = request.contentType(MediaType.parseMediaType("text/plain;charset=" + charset));
+
+                if (fixed.enforceResponse() && fixed.responseSchema() != null) {
+                    byte[] responseBytes = request
+                        .bodyValue(bodyBytes)
+                        .retrieve()
+                        .bodyToMono(byte[].class)
+                        .block(Duration.ofMillis(context.timeoutMillis()));
+                    String decodedJson = fixedLengthMessageService.decodeFixedBytesToJson(responseBytes, fixed.responseSchema());
+                    return ExecutionResult.success(decodedJson, elapsed(start));
+                }
+
+                String response = request
+                    .bodyValue(bodyBytes)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block(Duration.ofMillis(context.timeoutMillis()));
+                return ExecutionResult.success(response, elapsed(start));
+            }
+
+            if (fixed.enforceResponse() && fixed.responseSchema() != null) {
+                byte[] responseBytes = request
+                    .bodyValue(context.payload())
+                    .retrieve()
+                    .bodyToMono(byte[].class)
+                    .block(Duration.ofMillis(context.timeoutMillis()));
+                String decodedJson = fixedLengthMessageService.decodeFixedBytesToJson(responseBytes, fixed.responseSchema());
+                return ExecutionResult.success(decodedJson, elapsed(start));
+            }
+
+            String response = request
                 .bodyValue(context.payload())
                 .retrieve()
                 .bodyToMono(String.class)
                 .block(Duration.ofMillis(context.timeoutMillis()));
 
             return ExecutionResult.success(response, elapsed(start));
-            } catch (IllegalStateException exception) {
+        } catch (BusinessException exception) {
+            return ExecutionResult.failure(exception.getErrorCode().name(), exception.getMessage(), elapsed(start));
+        } catch (IllegalStateException exception) {
             // block() timeout
             return ExecutionResult.failure(ErrorCode.TIMEOUT.name(), exception.getMessage(), elapsed(start));
-            } catch (WebClientResponseException exception) {
+        } catch (WebClientResponseException exception) {
             if (exception.getStatusCode().is4xxClientError()) {
                 return ExecutionResult.failure(ErrorCode.EXT_4XX.name(), exception.getMessage(), elapsed(start));
             }
@@ -124,14 +170,14 @@ public class RestInterfaceExecutor implements InterfaceExecutor {
                 return ExecutionResult.failure(ErrorCode.EXT_5XX.name(), exception.getMessage(), elapsed(start));
             }
             return ExecutionResult.failure(ErrorCode.REST_CALL_FAILED.name(), exception.getMessage(), elapsed(start));
-            } catch (WebClientRequestException exception) {
+        } catch (WebClientRequestException exception) {
             return ExecutionResult.failure(ErrorCode.REST_CALL_FAILED.name(), exception.getMessage(), elapsed(start));
-            } catch (RuntimeException exception) {
+        } catch (RuntimeException exception) {
             return ExecutionResult.failure(ErrorCode.REST_CALL_FAILED.name(), exception.getMessage(), elapsed(start));
-            }
-            }
+        }
+    }
 
-            private long elapsed(long start) {
-            return System.currentTimeMillis() - start;
-            }
-            }
+    private long elapsed(long start) {
+        return System.currentTimeMillis() - start;
+    }
+}

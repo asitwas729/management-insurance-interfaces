@@ -38,6 +38,52 @@ public class ErrorCatalog {
     protected ErrorCatalog() {
     }
 
+    private ErrorCatalog(
+        String code,
+        String domain,
+        String severity,
+        int httpStatus,
+        boolean retriable,
+        String nextAction,
+        String description
+    ) {
+        this.code = code;
+        this.domain = domain;
+        this.severity = severity;
+        this.httpStatus = httpStatus;
+        this.retriable = retriable;
+        this.nextAction = nextAction;
+        this.description = description;
+    }
+
+    public static ErrorCatalog create(
+        String code,
+        String domain,
+        String severity,
+        int httpStatus,
+        boolean retriable,
+        String nextAction,
+        String description
+    ) {
+        return new ErrorCatalog(code, domain, severity, httpStatus, retriable, nextAction, description);
+    }
+
+    public void update(
+        String domain,
+        String severity,
+        int httpStatus,
+        boolean retriable,
+        String nextAction,
+        String description
+    ) {
+        this.domain = domain;
+        this.severity = severity;
+        this.httpStatus = httpStatus;
+        this.retriable = retriable;
+        this.nextAction = nextAction;
+        this.description = description;
+    }
+
     public String getCode() {
         return code;
     }

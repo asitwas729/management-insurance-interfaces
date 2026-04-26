@@ -47,6 +47,11 @@ public class StandardContractService {
         return reprocessPolicyRepository.findAll();
     }
 
+    @Transactional(readOnly = true)
+    public ErrorCatalog findErrorCatalog(String code) {
+        return errorCatalogRepository.findById(code).orElse(null);
+    }
+
     @Transactional
     @CacheEvict(cacheNames = "error-catalog", allEntries = true)
     public ReprocessPolicy upsertReprocessPolicy(String errorCode, UpsertReprocessPolicyRequest request) {
