@@ -1,6 +1,7 @@
 package com.example.interfacehub;
 
 import com.example.interfacehub.adapter.mq.KafkaMqProperties;
+import com.example.interfacehub.application.logging.CentralLoggingProperties;
 import com.example.interfacehub.application.mq.DlqReplayPolicyProperties;
 import com.example.interfacehub.application.notification.NotificationProperties;
 import com.example.interfacehub.application.scheduler.RetentionProperties;
@@ -16,7 +17,7 @@ import org.springframework.scheduling.annotation.EnableAsync;
 @SpringBootApplication
 @EnableCaching
 @EnableAsync
-@EnableConfigurationProperties({KafkaMqProperties.class, DlqReplayPolicyProperties.class, JwtProperties.class, SchedulerProperties.class, NotificationProperties.class, RetentionProperties.class, SeedProperties.class})
+@EnableConfigurationProperties({KafkaMqProperties.class, DlqReplayPolicyProperties.class, JwtProperties.class, SchedulerProperties.class, NotificationProperties.class, CentralLoggingProperties.class, RetentionProperties.class, SeedProperties.class})
 public class InterfaceHubApplication {
 
     public static void main(String[] args) {

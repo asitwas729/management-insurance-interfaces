@@ -75,6 +75,9 @@ interfacehub:
     replay:
       max-attempts: ${DLQ_REPLAY_MAX_ATTEMPTS:3}
       cooldown-seconds: ${DLQ_REPLAY_COOLDOWN_SECONDS:60}
+  central-logging:
+    enabled: ${CENTRAL_LOGGING_ENABLED:false}
+    webhook-url: ${CENTRAL_LOGGING_WEBHOOK_URL:}
 
 springdoc:
   api-docs:

@@ -23,6 +23,9 @@ public class RedisCacheConfig {
             Map.entry("published-config", defaults.entryTtl(Duration.ofMinutes(1))),
             Map.entry("error-catalog", defaults.entryTtl(Duration.ofMinutes(10))),
             Map.entry("maintenance", defaults.entryTtl(Duration.ofMinutes(1))),
+            Map.entry("resilience-policy", defaults.entryTtl(Duration.ofMinutes(5))),
+            Map.entry("standard-message-schema", defaults.entryTtl(Duration.ofMinutes(5))),
+            Map.entry("standard-message-rules", defaults.entryTtl(Duration.ofMinutes(5))),
             Map.entry("dashboard", defaults.entryTtl(Duration.ofSeconds(60)))
         );
 

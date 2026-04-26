@@ -89,12 +89,16 @@ management:
   metrics:
     tags:
       application: interfacehub
-  tracing:
-    sampling:
-      probability: 1.0
   otlp:
     tracing:
       endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318}/v1/traces
+    metrics:
+      export:
+        enabled: false
+  tracing:
+    enabled: false
+    sampling:
+      probability: 1.0
 
 logging:
   pattern:
@@ -124,6 +128,8 @@ interfacehub:
     model: claude-haiku-4-5-20251001
     max-tokens: 1024
   scheduler:
+    retry:
+      enabled: false
     enabled: ${SCHEDULER_ENABLED:true}
     retry-fixed-delay-seconds: 60
     dlq-fixed-delay-seconds: 60
@@ -131,6 +137,9 @@ interfacehub:
   notification:
     enabled: ${NOTIFICATION_ENABLED:false}
     webhook-url: ${NOTIFICATION_WEBHOOK_URL:}
+  central-logging:
+    enabled: ${CENTRAL_LOGGING_ENABLED:false}
+    webhook-url: ${CENTRAL_LOGGING_WEBHOOK_URL:}
   retention:
     execution-history-days: ${RETENTION_EXECUTION_DAYS:90}
     audit-log-days: ${RETENTION_AUDIT_DAYS:365}

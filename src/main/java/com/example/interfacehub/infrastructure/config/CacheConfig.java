@@ -35,6 +35,27 @@ public class CacheConfig {
                 .maximumSize(100)
                 .recordStats()
                 .<Object, Object>buildAsync());
+
+        manager.registerCustomCache("resilience-policy",
+            Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofMinutes(5))
+                .maximumSize(1_000)
+                .recordStats()
+                .<Object, Object>buildAsync());
+
+        manager.registerCustomCache("standard-message-schema",
+            Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofMinutes(5))
+                .maximumSize(1_000)
+                .recordStats()
+                .<Object, Object>buildAsync());
+
+        manager.registerCustomCache("standard-message-rules",
+            Caffeine.newBuilder()
+                .expireAfterWrite(Duration.ofMinutes(5))
+                .maximumSize(1_000)
+                .recordStats()
+                .<Object, Object>buildAsync());
         return manager;
     }
 }
